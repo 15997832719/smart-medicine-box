@@ -1,0 +1,20 @@
+{
+  "modelVersion": "5.0.0",
+  "name": "smart_medicine_box",
+  "version": "1.0.0",
+  "description": "???? HarmonyOS ????",
+  "main": "",
+  "author": "smartmedicine",
+  "license": "",
+  "dependencies": {
+    "@ohos/flutter_ohos": "file:./har/flutter.har"
+  },
+  "devDependencies": {
+    "@ohos/hypium": "1.0.6"
+  },
+  "overrides": {
+    "@ohos/flutter_ohos": "file:./har/flutter.har",
+    "jpush_flutter": "C:/Users/kjkhkh/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/jpush_flutter-3.4.4/ohos",
+    "@ohos/flutter_module": "file:./entry"
+  }
+}

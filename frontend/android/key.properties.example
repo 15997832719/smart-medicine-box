@@ -1,0 +1,6 @@
+# Copy this file to android/key.properties and replace every value.
+# Never commit android/key.properties or the keystore file.
+storeFile=../huiyao-release.jks
+storePassword=replace-with-keystore-password
+keyAlias=huiyao
+keyPassword=replace-with-key-password

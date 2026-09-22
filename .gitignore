@@ -1,19 +1,50 @@
-# Python
+﻿# Python
 __pycache__/
 *.py[cod]
 *.so
 .Python
 env/
 venv/
+.venv/
 .env
+backend/*.db
+backend/*.db-*
 
 # Flutter
 .dart_tool/
 .flutter-plugins
+.flutter-plugins-dependencies
 .pub/
+**/.appdata/
+**/.localappdata/
 build/
 *.apk
 *.ipa
+*.hap
+*.log
+frontend/build-*.txt
+frontend/android/key.properties
+frontend/android/*.jks
+frontend/android/*.keystore
+
+# Generated dependencies and build caches
+.hvigor/
+**/.hvigor/
+**/oh_modules/
+**/.ohpm/
+**/node_modules/
+frontend/ohos/dta/
+
+# Local archives and generated Office documents
+tools/backups/
+dist/**/*.docx
+dist/**/*.pdf
+dist/软著申请材料*/
+docs/软著材料/
+~$*
+
+# Local screenshots
+Screenshot_*.png
 
 # IDE
 .vscode/
@@ -23,3 +54,4 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+*.harmonyos-backup

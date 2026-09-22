@@ -1,0 +1,6 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sqlmodel==0.0.39
+python-multipart==0.0.20
+pydantic-settings==2.7.1
+faster-whisper>=1.0.0,<2.0.0

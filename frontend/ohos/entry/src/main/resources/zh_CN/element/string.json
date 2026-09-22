@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "智能药箱鸿蒙提醒模块"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "智能药箱"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "智能药箱"
+    }
+  ]
+}

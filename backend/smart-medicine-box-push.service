@@ -1,0 +1,9 @@
+[Unit]
+Description=Smart Medicine Box JPush reminder scan
+After=network-online.target smart-medicine-box.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/smart-medicine-box-backend
+EnvironmentFile=-/root/smart-medicine-box-backend/.env
+ExecStart=/root/smart-medicine-box-backend/.venv/bin/python -m app.push_worker
