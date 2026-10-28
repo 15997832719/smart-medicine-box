@@ -39,17 +39,33 @@ async def handle_user_intent(conn: "ConnectionHandler", text):
 
     # 身份问题固定回答，避免上一轮服药上下文污染。
     if is_identity_question(filtered_text):
+        # 先把上一轮 TTS 取消，再用全新的 sentence_id 播报本轮固定回答。
+        conn.client_abort = True
+        if getattr(conn, "audio_rate_controller", None):
+            conn.audio_rate_controller.reset()
+        conn.sentence_id = str(uuid.uuid4().hex)
         await send_stt_message(conn, text)
         reply = identity_reply()
         conn.dialogue.put(Message(role="user", content=text))
         conn.tts.store_tts_text(conn.sentence_id, reply)
+        conn.tts.tts_text_queue.put(
+            TTSMessageDTO(
+                sentence_id=conn.sentence_id,
+                sentence_type=SentenceType.FIRST,
+                content_type=ContentType.ACTION,
+            )
+        )
         conn.tts.tts_one_sentence(
             conn,
             ContentType.TEXT,
             content_detail=reply,
         )
-        conn.tts.tts_audio_queue.put(
-            (SentenceType.LAST, [], None, conn.sentence_id)
+        conn.tts.tts_text_queue.put(
+            TTSMessageDTO(
+                sentence_id=conn.sentence_id,
+                sentence_type=SentenceType.LAST,
+                content_type=ContentType.ACTION,
+            )
         )
         conn.dialogue.put(Message(role="assistant", content=reply))
         return True
@@ -290,8 +306,3 @@ def speak_txt(conn: "ConnectionHandler", text):
         )
     )
     conn.dialogue.put(Message(role="assistant", content=text))
-
-
-
-
-

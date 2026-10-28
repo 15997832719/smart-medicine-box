@@ -29,6 +29,9 @@ def is_identity_question(text: str) -> bool:
     normalized = (text or "").strip()
     for char in "，,。.!！？?；;：:、 ":
         normalized = normalized.replace(char, "")
+    for prefix in ("我说", "我问", "问一下", "请问"):
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix):]
     return normalized in {
         "你是谁",
         "你是谁呀",
@@ -57,8 +60,3 @@ def is_current_time_question(text: str) -> bool:
         "北京时间现在几点",
         "现在北京时间几点",
     }
-
-
-
-
-

@@ -20,7 +20,7 @@ class CurrentTimeTests(unittest.TestCase):
         self.assertFalse(clock.is_current_time_question("现在吃什么药"))
 
     def test_identity_questions_are_not_medicine_confirmations(self) -> None:
-        for question in ("你是谁", "你是谁？", "你是谁呀", "你是什么东西"):
+        for question in ("你是谁", "你是谁？", "你是谁呀", "你是什么东西", "我说你是谁", "请问你是谁"):
             self.assertTrue(clock.is_identity_question(question), question)
         self.assertFalse(clock.is_identity_question("我已经吃过药了"))
         self.assertFalse(clock.is_identity_question("今天吃什么药"))
@@ -29,4 +29,3 @@ class CurrentTimeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
