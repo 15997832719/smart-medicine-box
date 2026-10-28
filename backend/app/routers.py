@@ -1,8 +1,10 @@
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
+import logging
 import secrets
 import re
 import tempfile
+import time as perf_time
 
 from starlette.concurrency import run_in_threadpool
 
@@ -13,6 +15,7 @@ from app.asr import ASRError, transcribe_audio_file
 from app.auth import accessible_owner_ids, get_current_user, require_owner_access
 from app.config import get_settings
 from app.database import get_session
+from app.instructions import find_approved_instruction
 from app.models import AuditLog, DeviceToken, IntakeLog, Medicine, Reminder, User, SpeakerBinding
 from app.schemas import (
     AlertRead,
@@ -35,8 +38,21 @@ from app.schemas import (
     VoiceIntentRequest,
 )
 from app.voice_intents import VoiceIntent, shi_bie_yu_yin_yi_tu, gui_fan_hua_yu_yin_wen_ben
+from app.voice_assistant import (
+    clear_context,
+    get_context,
+    high_risk_reply,
+    is_cancellation,
+    is_confirmation,
+    match_medicine,
+    medicine_facts,
+    reply_payload,
+    save_context,
+    schedule_facts,
+)
 from app.services import (
     MedicineRecognitionError,
+    answer_voice_ai,
     gou_jian_yao_pin,
     check_conflicts,
     lie_chu_jing_gao,
@@ -49,6 +65,7 @@ from app.services import (
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 @router.post("/speaker/pairing-code")
 def create_speaker_pairing_code(user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict:
@@ -128,6 +145,29 @@ def health() -> dict[str, str]:
     return {"status": "ok", "time": utcnow().isoformat()}
 
 
+def _audit(
+    session: Session,
+    actor: User,
+    action: str,
+    resource_type: str,
+    resource_id: int | None,
+    owner_id: int | None,
+    detail: str | None = None,
+) -> None:
+    fields = [f"owner_id={owner_id}", f"actor_user_id={actor.id}"]
+    if detail:
+        fields.append(detail)
+    session.add(
+        AuditLog(
+            user_id=actor.id,
+            action=action,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            detail=";".join(fields),
+        )
+    )
+
+
 def _medicine_query(session: Session, owner_id: int, medicine_id: int) -> Medicine:
     medicine = session.exec(select(Medicine).where(Medicine.id == medicine_id, Medicine.owner_id == owner_id)).first()
     if not medicine:
@@ -135,8 +175,14 @@ def _medicine_query(session: Session, owner_id: int, medicine_id: int) -> Medici
     return medicine
 
 
-def _owner_for_request(session: Session, user: User, elder_id: int | None) -> int:
-    return require_owner_access(session, user, elder_id)
+def _owner_reference(owner_id: int | None, elder_id: int | None) -> int | None:
+    if owner_id is not None and elder_id is not None and owner_id != elder_id:
+        raise HTTPException(status_code=400, detail="owner_id 与 elder_id 不一致")
+    return owner_id if owner_id is not None else elder_id
+
+
+def _owner_for_request(session: Session, user: User, owner_id: int | None) -> int:
+    return require_owner_access(session, user, owner_id)
 
 
 def _reminder_read(reminder: Reminder) -> ReminderRead:
@@ -157,11 +203,12 @@ def _intake_read(log: IntakeLog) -> IntakeLogRead:
 
 @router.get("/medicines", response_model=list[MedicineRead])
 def list_medicines(
+    owner_id: int | None = Query(default=None, ge=1),
     elder_id: int | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> list[MedicineRead]:
-    owner_id = _owner_for_request(session, user, elder_id)
+    owner_id = _owner_for_request(session, user, _owner_reference(owner_id, elder_id))
     medicines = session.exec(select(Medicine).where(Medicine.owner_id == owner_id).order_by(Medicine.created_at.desc())).all()
     return [yao_pin_zhuan_du_qu(medicine) for medicine in medicines]
 
@@ -169,18 +216,19 @@ def list_medicines(
 @router.post("/medicines", response_model=MedicineRead, status_code=status.HTTP_201_CREATED)
 def create_medicine(
     payload: MedicineCreate,
+    owner_id: int | None = Query(default=None, ge=1),
     elder_id: int | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> MedicineRead:
-    owner_id = _owner_for_request(session, user, elder_id)
+    owner_id = _owner_for_request(session, user, _owner_reference(owner_id, elder_id))
     medicine = gou_jian_yao_pin(payload)
     medicine.owner_id = owner_id
     session.add(medicine)
+    session.flush()
+    _audit(session, user, "create", "medicine", medicine.id, owner_id)
     session.commit()
     session.refresh(medicine)
-    session.add(AuditLog(user_id=user.id, action="create", resource_type="medicine", resource_id=medicine.id, detail="medicine created"))
-    session.commit()
     return yao_pin_zhuan_du_qu(medicine)
 
 
@@ -206,6 +254,7 @@ def update_medicine(medicine_id: int, payload: MedicineUpdate, user: User = Depe
         setattr(medicine, key, value)
     medicine.updated_at = datetime.utcnow()
     session.add(medicine)
+    _audit(session, user, "update", "medicine", medicine.id, medicine.owner_id)
     session.commit()
     session.refresh(medicine)
     return yao_pin_zhuan_du_qu(medicine)
@@ -217,6 +266,7 @@ def delete_medicine(medicine_id: int, user: User = Depends(get_current_user), se
     medicine = session.exec(select(Medicine).where(Medicine.id == medicine_id, Medicine.owner_id.in_(allowed))).first()
     if not medicine:
         raise HTTPException(status_code=404, detail="Medicine not found")
+    _audit(session, user, "delete", "medicine", medicine.id, medicine.owner_id)
     for reminder in session.exec(select(Reminder).where(Reminder.medicine_id == medicine_id)).all():
         session.delete(reminder)
     for log in session.exec(select(IntakeLog).where(IntakeLog.medicine_id == medicine_id)).all():
@@ -228,11 +278,12 @@ def delete_medicine(medicine_id: int, user: User = Depends(get_current_user), se
 @router.get("/medicines/expiring/list", response_model=list[MedicineRead])
 def list_expiring_medicines(
     days: int = Query(default=30, ge=0, le=3650),
+    owner_id: int | None = Query(default=None, ge=1),
     elder_id: int | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> list[MedicineRead]:
-    owner_id = _owner_for_request(session, user, elder_id)
+    owner_id = _owner_for_request(session, user, _owner_reference(owner_id, elder_id))
     cutoff = date.today() + timedelta(days=days)
     medicines = session.exec(
         select(Medicine).where(Medicine.owner_id == owner_id, Medicine.expire_date.is_not(None), Medicine.expire_date <= cutoff)
@@ -242,11 +293,12 @@ def list_expiring_medicines(
 
 @router.get("/reminders", response_model=list[ReminderRead])
 def list_reminders(
+    owner_id: int | None = Query(default=None, ge=1),
     elder_id: int | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> list[ReminderRead]:
-    owner_id = _owner_for_request(session, user, elder_id)
+    owner_id = _owner_for_request(session, user, _owner_reference(owner_id, elder_id))
     reminders = session.exec(select(Reminder).where(Reminder.owner_id == owner_id).order_by(Reminder.remind_time)).all()
     return [_reminder_read(reminder) for reminder in reminders]
 
@@ -254,14 +306,17 @@ def list_reminders(
 @router.post("/reminders", response_model=ReminderRead, status_code=status.HTTP_201_CREATED)
 def create_reminder(
     payload: ReminderCreate,
+    owner_id: int | None = Query(default=None, ge=1),
     elder_id: int | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> ReminderRead:
-    owner_id = _owner_for_request(session, user, elder_id)
-    _medicine_query(session, owner_id, payload.medicine_id)
-    reminder = Reminder(**payload.model_dump(), owner_id=owner_id)
+    owner_id = _owner_for_request(session, user, _owner_reference(owner_id, elder_id))
+    medicine = _medicine_query(session, owner_id, payload.medicine_id)
+    reminder = Reminder(**payload.model_dump(exclude={"title"}), title=medicine.name, owner_id=owner_id)
     session.add(reminder)
+    session.flush()
+    _audit(session, user, "create", "reminder", reminder.id, owner_id)
     session.commit()
     session.refresh(reminder)
     return _reminder_read(reminder)
@@ -276,6 +331,7 @@ def update_reminder(reminder_id: int, payload: ReminderUpdate, user: User = Depe
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(reminder, key, value)
     session.add(reminder)
+    _audit(session, user, "update", "reminder", reminder.id, reminder.owner_id)
     session.commit()
     session.refresh(reminder)
     return _reminder_read(reminder)
@@ -287,18 +343,30 @@ def delete_reminder(reminder_id: int, user: User = Depends(get_current_user), se
     reminder = session.exec(select(Reminder).where(Reminder.id == reminder_id, Reminder.owner_id.in_(allowed))).first()
     if not reminder:
         raise HTTPException(status_code=404, detail="Reminder not found")
+    _audit(session, user, "delete", "reminder", reminder.id, reminder.owner_id)
     session.delete(reminder)
     session.commit()
 
 
 @router.get("/schedules", response_model=list[ReminderRead])
-def list_schedules(elder_id: int | None = Query(default=None), user: User = Depends(get_current_user), session: Session = Depends(get_session)):
-    return list_reminders(elder_id=elder_id, user=user, session=session)
+def list_schedules(
+    owner_id: int | None = Query(default=None, ge=1),
+    elder_id: int | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    return list_reminders(owner_id=owner_id, elder_id=elder_id, user=user, session=session)
 
 
 @router.post("/schedules", response_model=ReminderRead, status_code=status.HTTP_201_CREATED)
-def create_schedule(payload: ReminderCreate, elder_id: int | None = Query(default=None), user: User = Depends(get_current_user), session: Session = Depends(get_session)):
-    return create_reminder(payload=payload, elder_id=elder_id, user=user, session=session)
+def create_schedule(
+    payload: ReminderCreate,
+    owner_id: int | None = Query(default=None, ge=1),
+    elder_id: int | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    return create_reminder(payload=payload, owner_id=owner_id, elder_id=elder_id, user=user, session=session)
 
 
 @router.patch("/schedules/{schedule_id}", response_model=ReminderRead)
@@ -308,8 +376,13 @@ def update_schedule(schedule_id: int, payload: ScheduleUpdate, user: User = Depe
     if not reminder:
         raise HTTPException(status_code=404, detail="Schedule not found")
     data = payload.model_dump(exclude_unset=True)
+    medicine = None
     if data.get("medicine_id") is not None:
-        _medicine_query(session, reminder.owner_id or 0, data["medicine_id"])
+        medicine = _medicine_query(session, reminder.owner_id or 0, data["medicine_id"])
+    else:
+        medicine = session.get(Medicine, reminder.medicine_id)
+    if medicine is not None:
+        data["title"] = medicine.name
     if "is_active" in data and "enabled" not in data:
         data["enabled"] = data.pop("is_active")
     else:
@@ -317,6 +390,7 @@ def update_schedule(schedule_id: int, payload: ScheduleUpdate, user: User = Depe
     for key, value in data.items():
         setattr(reminder, key, value)
     session.add(reminder)
+    _audit(session, user, "update", "schedule", reminder.id, reminder.owner_id)
     session.commit()
     session.refresh(reminder)
     return _reminder_read(reminder)
@@ -359,14 +433,30 @@ def _confirm_schedule(schedule_id: int, method: str, user: User, session: Sessio
         medicine.updated_at = now
         session.add(medicine)
     session.add(log)
+    session.flush()
+    _audit(
+        session,
+        user,
+        "confirm",
+        "intake_log",
+        log.id,
+        reminder.owner_id,
+        f"method={method};schedule_id={schedule_id}",
+    )
     session.commit()
     session.refresh(log)
     return log, f"已记录你服用了{medicine.name}。"
 
 
 @router.post("/intake-logs", response_model=IntakeLogRead, status_code=status.HTTP_201_CREATED)
-def create_intake_log(payload: IntakeLogCreate, elder_id: int | None = Query(default=None), user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> IntakeLogRead:
-    owner_id = _owner_for_request(session, user, elder_id)
+def create_intake_log(
+    payload: IntakeLogCreate,
+    owner_id: int | None = Query(default=None, ge=1),
+    elder_id: int | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> IntakeLogRead:
+    owner_id = _owner_for_request(session, user, _owner_reference(owner_id, elder_id))
     medicine = _medicine_query(session, owner_id, payload.medicine_id)
     log = IntakeLog(owner_id=owner_id, medicine_id=payload.medicine_id, dose=payload.dose, note=payload.note, taken_at=payload.taken_at or datetime.utcnow())
     if medicine.stock_count > 0:
@@ -374,21 +464,33 @@ def create_intake_log(payload: IntakeLogCreate, elder_id: int | None = Query(def
         medicine.updated_at = datetime.utcnow()
         session.add(medicine)
     session.add(log)
+    session.flush()
+    _audit(session, user, "create", "intake_log", log.id, owner_id)
     session.commit()
     session.refresh(log)
     return _intake_read(log)
 
 
 @router.get("/intake-logs", response_model=list[IntakeLogRead])
-def list_intake_logs(elder_id: int | None = Query(default=None), user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> list[IntakeLogRead]:
-    owner_id = _owner_for_request(session, user, elder_id)
+def list_intake_logs(
+    owner_id: int | None = Query(default=None, ge=1),
+    elder_id: int | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> list[IntakeLogRead]:
+    owner_id = _owner_for_request(session, user, _owner_reference(owner_id, elder_id))
     logs = session.exec(select(IntakeLog).where(IntakeLog.owner_id == owner_id).order_by(IntakeLog.taken_at.desc()).limit(100)).all()
     return [_intake_read(log) for log in logs]
 
 
 @router.get("/alerts", response_model=list[AlertRead])
-def get_alerts(elder_id: int | None = Query(default=None), user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> list[AlertRead]:
-    owner_id = _owner_for_request(session, user, elder_id)
+def get_alerts(
+    owner_id: int | None = Query(default=None, ge=1),
+    elder_id: int | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> list[AlertRead]:
+    owner_id = _owner_for_request(session, user, _owner_reference(owner_id, elder_id))
     alerts = lie_chu_jing_gao(session, [owner_id])
     now = datetime.utcnow()
     start = datetime.combine(now.date(), time.min)
@@ -438,9 +540,44 @@ def check_medicine_conflicts(payload: ConflictCheckRequest, user: User = Depends
 
 
 @router.post("/ai/recognize-medicine", response_model=RecognizeResult)
-async def recognize_medicine(image: UploadFile = File(...), user: User = Depends(get_current_user)) -> RecognizeResult:
+async def recognize_medicine(
+    image: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> RecognizeResult:
+    del user
     try:
-        return await recognize_medicine_image(await image.read(), image.content_type)
+        identified = await recognize_medicine_image(await image.read(), image.content_type)
+        medicine = identified.medicine
+        instruction = find_approved_instruction(
+            session,
+            query=medicine.name,
+            medicine=None,
+        )
+        if instruction is None:
+            return identified
+        precaution_parts = [
+            value
+            for value in (
+                medicine.precautions,
+                instruction.contraindications,
+                instruction.precautions,
+                instruction.adverse_reactions,
+                instruction.interactions,
+            )
+            if value
+        ]
+        enriched_medicine = medicine.model_copy(update={
+            "manufacturer": medicine.manufacturer or instruction.manufacturer,
+            "dosage": medicine.dosage or instruction.dosage,
+            "precautions": "?".join(dict.fromkeys(precaution_parts)) or None,
+            "information_source": instruction.source_url,
+            "source_type": instruction.source_type,
+        })
+        return identified.model_copy(update={
+            "medicine": enriched_medicine,
+            "source": "reviewed_instruction",
+        })
     except MedicineRecognitionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -504,23 +641,40 @@ def _today_summary(owner_id: int, session: Session) -> dict:
 
 
 @router.get("/logs/today")
-def logs_today(elder_id: int | None = Query(default=None), user: User = Depends(get_current_user), session: Session = Depends(get_session)):
-    return _today_summary(_owner_for_request(session, user, elder_id), session)
+def logs_today(
+    owner_id: int | None = Query(default=None, ge=1),
+    elder_id: int | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    resolved_owner_id = _owner_for_request(session, user, _owner_reference(owner_id, elder_id))
+    return _today_summary(resolved_owner_id, session)
 
 
 @router.get("/logs/week")
-def logs_week(elder_id: int | None = Query(default=None), user: User = Depends(get_current_user), session: Session = Depends(get_session)):
-    owner_id = _owner_for_request(session, user, elder_id)
+def logs_week(
+    owner_id: int | None = Query(default=None, ge=1),
+    elder_id: int | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    owner_id = _owner_for_request(session, user, _owner_reference(owner_id, elder_id))
     start = datetime.combine(date.today() - timedelta(days=6), time.min)
     logs = session.exec(select(IntakeLog).where(IntakeLog.owner_id == owner_id, IntakeLog.taken_at >= start).order_by(IntakeLog.taken_at.desc())).all()
     return [_intake_read(log).model_dump(mode="json") for log in logs]
 
 
 @router.get("/logs/history/{elder_id}")
-def logs_history(elder_id: int, days: int = Query(default=7, ge=1, le=365), user: User = Depends(get_current_user), session: Session = Depends(get_session)):
-    owner_id = _owner_for_request(session, user, elder_id)
+def logs_history(
+    elder_id: int,
+    owner_id: int | None = Query(default=None, ge=1),
+    days: int = Query(default=7, ge=1, le=365),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    resolved_owner_id = _owner_for_request(session, user, _owner_reference(owner_id, elder_id))
     start = datetime.combine(date.today() - timedelta(days=days - 1), time.min)
-    logs = session.exec(select(IntakeLog).where(IntakeLog.owner_id == owner_id, IntakeLog.taken_at >= start).order_by(IntakeLog.taken_at.desc())).all()
+    logs = session.exec(select(IntakeLog).where(IntakeLog.owner_id == resolved_owner_id, IntakeLog.taken_at >= start).order_by(IntakeLog.taken_at.desc())).all()
     return [_intake_read(log).model_dump(mode="json") for log in logs]
 
 
@@ -533,12 +687,18 @@ def logs_confirm(payload: LogConfirmRequest, user: User = Depends(get_current_us
 @router.post("/voice/transcribe")
 async def transcribe_voice(
     audio: UploadFile = File(...),
+    owner_id: int | None = Query(default=None, ge=1),
+    trace_id: str | None = Query(default=None, max_length=80),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-
-    owner_id = _owner_for_request(session, user, None)
-    medicines = session.exec(select(Medicine).where(Medicine.owner_id == owner_id).order_by(Medicine.name)).all()
+    started_at = perf_time.perf_counter()
+    resolved_owner_id = _owner_for_request(session, user, owner_id)
+    medicines = session.exec(
+        select(Medicine)
+        .where(Medicine.owner_id == resolved_owner_id)
+        .order_by(Medicine.name)
+    ).all()
     medicine_names = [medicine.name for medicine in medicines if medicine.name][:30]
     initial_prompt = (
         "家庭用药咨询。常见药品名称：" + "、".join(medicine_names)
@@ -552,6 +712,8 @@ async def transcribe_voice(
         suffix = ".m4a"
 
     temp_path: Path | None = None
+    log_status = "ok"
+    log_detail = "transcribed"
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
             temp_path = Path(temp_file.name)
@@ -564,17 +726,63 @@ async def transcribe_voice(
                         detail=f"录音文件不能超过 {settings.asr_max_upload_mb} MB",
                     )
                 temp_file.write(chunk)
+        if temp_path.stat().st_size <= 2048:
+            raise HTTPException(status_code=400, detail="录音文件过短或为空，请重新录制")
 
-        text = await run_in_threadpool(transcribe_audio_file, temp_path, initial_prompt)
-        return {"success": True, "text": text, "model": settings.asr_model}
+        transcript = await run_in_threadpool(transcribe_audio_file, temp_path, initial_prompt)
+        return {
+            "success": True,
+            "text": transcript,
+            "model": settings.asr_model,
+            "trace_id": trace_id or "unknown",
+        }
+    except HTTPException as exc:
+        log_status = "error"
+        log_detail = str(exc.detail)
+        raise
     except ASRError as exc:
+        log_status = "error"
+        log_detail = str(exc)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except Exception as exc:
+        log_status = "error"
+        log_detail = str(exc)
+        raise
     finally:
         await audio.close()
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
+        logger.info(
+            "voice_transcribe",
+            extra={
+                "trace_id": trace_id or "unknown",
+                "user_id": user.id,
+                "owner_id": resolved_owner_id,
+                "status": log_status,
+                "detail": log_detail,
+                "elapsed_ms": round((perf_time.perf_counter() - started_at) * 1000, 2),
+            },
+        )
 
-def _voice_today_reply(owner_id: int, session: Session) -> str:
+
+def _voice_spoken_time(value: time) -> str:
+    hour = value.hour
+    if hour < 6:
+        period = "凌晨"
+    elif hour < 12:
+        period = "早上"
+    elif hour < 14:
+        period = "中午"
+    elif hour < 18:
+        period = "下午"
+    else:
+        period = "晚上"
+    hour_text = str(hour if hour <= 12 else hour - 12)
+    minute_text = "" if value.minute == 0 else f"{value.minute}分"
+    return f"{period}{hour_text}点{minute_text}"
+
+
+def _voice_today_reply(owner_id: int, session: Session, question: str = "") -> str:
     reminders = [
         reminder
         for reminder in session.exec(
@@ -584,16 +792,47 @@ def _voice_today_reply(owner_id: int, session: Session) -> str:
         ).all()
         if _schedule_matches_day(reminder, date.today())
     ]
-    items: list[str] = []
+    items: list[tuple[Reminder, Medicine]] = []
     for reminder in reminders:
         medicine = session.get(Medicine, reminder.medicine_id)
-        if not medicine:
-            continue
-        dose = f"（{reminder.dose}）" if reminder.dose else ""
-        items.append(f"{reminder.remind_time.strftime('%H:%M')} {medicine.name}{dose}")
+        if medicine:
+            items.append((reminder, medicine))
     if not items:
         return "今天没有需要服用的药。"
-    return "今天需要服用的药是：" + "；".join(items) + "。请按计划服用。"
+
+    normalized = gui_fan_hua_yu_yin_wen_ben(question)
+    wants_full = any(word in normalized for word in ("全部", "详细", "所有", "每一项", "全部计划"))
+    if wants_full:
+        parts: list[str] = []
+        for reminder, medicine in items[:5]:
+            dose = f"，{reminder.dose}" if reminder.dose else ""
+            parts.append(f"{_voice_spoken_time(reminder.remind_time)}服用{medicine.name}{dose}")
+        reply = f"今天有{len(items)}项用药：" + "；".join(parts)
+        if len(items) > 5:
+            reply += f"；另外还有{len(items) - 5}项，请在 App 查看"
+        return reply + "。"
+
+    if len(items) == 1:
+        reminder, medicine = items[0]
+        dose = f"，{reminder.dose}" if reminder.dose else ""
+        return f"今天只有一项用药：{_voice_spoken_time(reminder.remind_time)}服用{medicine.name}{dose}。"
+
+    now = datetime.now().time()
+    upcoming = [(reminder, medicine) for reminder, medicine in items if reminder.remind_time >= now]
+    if not upcoming:
+        reminder, medicine = items[-1]
+        dose = f"，{reminder.dose}" if reminder.dose else ""
+        return (
+            f"今天有{len(items)}项用药，计划时间都已经过了。最后一项是"
+            f"{_voice_spoken_time(reminder.remind_time)}服用{medicine.name}{dose}。"
+            f"想听全部，请说“全部用药计划”。"
+        )
+    reminder, medicine = upcoming[0]
+    dose = f"，{reminder.dose}" if reminder.dose else ""
+    return (
+        f"今天有{len(items)}项用药。下一项是{_voice_spoken_time(reminder.remind_time)}服用"
+        f"{medicine.name}{dose}。想听全部，请说“全部用药计划”。"
+    )
 
 
 def _voice_stock_reply(owner_id: int, session: Session) -> str:
@@ -654,12 +893,67 @@ def _voice_match_reminders(text: str, reminders: list[Reminder], session: Sessio
     return matches
 
 
-def _voice_confirm_taken(
-    payload: VoiceIntentRequest,
-    owner_id: int,
-    user: User,
-    session: Session,
-) -> dict:
+def _voice_medicine_info_reply(
+    medicine: Medicine,
+    question: str,
+    instruction=None,
+) -> str:
+    normalized = gui_fan_hua_yu_yin_wen_ben(question)
+    dosage = (medicine.dosage or getattr(instruction, "dosage", None) or "").strip()
+    medicine_precautions = (medicine.precautions or "").strip()
+    instruction_precautions = [
+        value
+        for value in (
+            getattr(instruction, "contraindications", None),
+            getattr(instruction, "precautions", None),
+            getattr(instruction, "adverse_reactions", None),
+            getattr(instruction, "interactions", None),
+        )
+        if value
+    ]
+    precautions = "；".join([medicine_precautions, *instruction_precautions]).strip("；")
+    description = (medicine.description or "").strip()
+    source_note = "以上内容来自当前药品记录和已审核说明书资料，请以实物说明书和医生指导为准。"
+    if any(word in normalized for word in ("饭前", "饭后", "餐前", "餐后")):
+        source = "；".join(item for item in (dosage, precautions, description) if item)
+        matched = next((word for word in ("饭前", "饭后", "餐前", "餐后") if word in source), None)
+        if matched:
+            return f"{medicine.name}的记录中写有{matched}相关信息：{source}。{source_note}"
+        return f"现有用药资料没有写明{medicine.name}应该饭前还是饭后服用，请查看药品说明书或咨询药师。"
+    if any(word in normalized for word in ("怎么吃", "吃多少", "几片", "几次", "剂量", "用法")):
+        if dosage:
+            return f"{medicine.name}的用法用量是：{dosage}。{source_note}"
+        return f"现有资料没有记录{medicine.name}的具体用法用量，请查看说明书或咨询医生、药师。"
+    if any(word in normalized for word in ("禁忌", "注意", "慎用", "不良反应", "相互作用")):
+        if precautions:
+            return f"{medicine.name}的注意事项或风险信息是：{precautions}。{source_note}"
+        return f"现有资料没有记录{medicine.name}的禁忌或注意事项，请查看说明书或咨询医生、药师。"
+    parts = [item for item in (dosage, precautions, description) if item]
+    if parts:
+        return f"{medicine.name}：{'；'.join(parts)}。{source_note}"
+    return f"现有资料没有足够的{medicine.name}说明信息，请查看药品说明书或咨询医生、药师。"
+
+
+def _voice_ask_medicine(payload: VoiceIntentRequest, user: User, session: Session, reply: str) -> dict:
+    save_context(
+        user.id or 0,
+        payload.session_id,
+        last_intent="confirm_taken",
+        pending_action={"type": "await_medicine"},
+    )
+    return reply_payload(
+        "confirm_taken",
+        reply,
+        source="rule",
+        confidence=0.8,
+        needs_medicine=True,
+        session_id=payload.session_id,
+        success=False,
+    )
+
+def _voice_confirm_taken(payload: VoiceIntentRequest, owner_id: int, user: User, session: Session) -> dict:
+    context = get_context(user.id or 0, payload.session_id)
+    pending = context.get("pending_action") if isinstance(context.get("pending_action"), dict) else None
     reminders = [
         reminder
         for reminder in session.exec(
@@ -669,17 +963,31 @@ def _voice_confirm_taken(
         ).all()
         if _schedule_matches_day(reminder, date.today())
     ]
+    if pending and pending.get("type") == "confirm_taken":
+        if is_cancellation(payload.text):
+            clear_context(user.id or 0, payload.session_id)
+            reply = "已取消本次服药确认。"
+            return reply_payload("confirm_taken_cancelled", reply, source="rule", confidence=1.0, session_id=payload.session_id, success=False)
+        if is_confirmation(payload.text):
+            selected = next((item for item in reminders if item.id == pending.get("schedule_id")), None)
+            if selected is None:
+                clear_context(user.id or 0, payload.session_id)
+                reply = "这条用药计划已经不存在，请重新查看计划。"
+                return reply_payload("confirm_taken", reply, source="database", confidence=1.0, session_id=payload.session_id, success=False)
+            medicine = session.get(Medicine, selected.medicine_id)
+            log, message = _confirm_schedule(selected.id or 0, "voice", user, session)
+            clear_context(user.id or 0, payload.session_id)
+            return reply_payload("confirm_taken", message, source="database", confidence=1.0, medicine_id=medicine.id if medicine else None, schedule_id=selected.id, session_id=payload.session_id)
+        pending = None
+
     if not reminders:
         reply = "现在没有需要确认的服药计划。"
-        return {"success": False, "intent": VoiceIntent.confirm_taken.value, "message": reply, "reply": reply}
+        return reply_payload("confirm_taken", reply, source="database", confidence=1.0, session_id=payload.session_id, success=False)
 
-    selected: Reminder | None = None
+    selected = None
     if payload.schedule_id is not None:
         selected = next((item for item in reminders if item.id == payload.schedule_id), None)
-        if selected is None:
-            reply = "没有找到这条用药计划，请重新打开提醒后再确认。"
-            return {"success": False, "intent": VoiceIntent.confirm_taken.value, "message": reply, "reply": reply}
-    else:
+    if selected is None:
         matches = _voice_match_reminders(payload.text, reminders, session)
         if len(matches) == 1:
             selected = matches[0]
@@ -689,48 +997,107 @@ def _voice_confirm_taken(
                 medicine = session.get(Medicine, reminder.medicine_id)
                 if medicine:
                     names.append(medicine.name)
-            reply = "匹配到多种药：" + "、".join(dict.fromkeys(names)) + "。请说清药品名称后再确认。"
-            return {"success": False, "intent": VoiceIntent.confirm_taken.value, "message": reply, "reply": reply}
-        elif len(reminders) == 1:
-            selected = reminders[0]
+            reply = "匹配到多种药：" + "、".join(dict.fromkeys(names)) + "。请说完整药品名称后再确认。"
+            return _voice_ask_medicine(payload, user, session, reply)
         else:
-            reply = "你今天有多个用药计划，请说清药品名称后再确认，避免记错。"
-            return {"success": False, "intent": VoiceIntent.confirm_taken.value, "message": reply, "reply": reply}
+            reply = "请问您刚才吃的是哪种药？请说药名。"
+            return _voice_ask_medicine(payload, user, session, reply)
 
-    log, message = _confirm_schedule(selected.id or 0, "voice", user, session)
-    return {
-        "success": True,
-        "intent": VoiceIntent.confirm_taken.value,
-        "message": message,
-        "reply": message,
-        "schedule_id": selected.id,
-        "log": _intake_read(log).model_dump(mode="json"),
-    }
+    medicine = session.get(Medicine, selected.medicine_id)
+    if not medicine:
+        reply = "这条计划对应的药品不存在，请重新维护计划。"
+        return reply_payload("confirm_taken", reply, source="database", confidence=1.0, session_id=payload.session_id, success=False)
+    save_context(
+        user.id or 0,
+        payload.session_id,
+        last_intent="confirm_taken",
+        medicine_id=medicine.id,
+        schedule_id=selected.id,
+        pending_action={"type": "confirm_taken", "schedule_id": selected.id, "medicine_id": medicine.id},
+    )
+    dose = f"，剂量{selected.dose}" if selected.dose else ""
+    reply = f"请确认是否记录今天服用{medicine.name}{dose}。确认后请说“确认”。"
+    return reply_payload("confirm_taken", reply, source="rule", confidence=1.0, needs_confirmation=True, medicine_id=medicine.id, schedule_id=selected.id, session_id=payload.session_id)
 
 
-def _voice_intent(payload: VoiceIntentRequest, user: User, session: Session) -> dict:
-    owner_id = _owner_for_request(session, user, None)
-    intent = shi_bie_yu_yin_yi_tu(payload.text, payload.schedule_id)
+async def _voice_intent_core(payload: VoiceIntentRequest, user: User, session: Session) -> dict:
+    owner_id = _owner_for_request(session, user, payload.owner_id)
+    medicines = session.exec(select(Medicine).where(Medicine.owner_id == owner_id).order_by(Medicine.name)).all()
+    risk_reply = high_risk_reply(payload.text)
+    if risk_reply:
+        return reply_payload("high_risk_medical_question", risk_reply, source="rule", confidence=1.0, session_id=payload.session_id, success=False)
+
+    context = get_context(user.id or 0, payload.session_id)
+    pending = context.get("pending_action") if isinstance(context.get("pending_action"), dict) else None
+    if pending and pending.get("type") == "confirm_taken" and (is_confirmation(payload.text) or is_cancellation(payload.text)):
+        return _voice_confirm_taken(payload, owner_id, user, session)
+
+    matched = match_medicine(payload.text, medicines)
+    corrected_text = matched.corrected_text
+    if pending and pending.get("type") == "await_medicine" and matched.medicine_id is not None:
+        return _voice_confirm_taken(payload, owner_id, user, session)
+    intent = shi_bie_yu_yin_yi_tu(corrected_text, payload.schedule_id)
+    if matched.medicine_id is not None:
+        save_context(user.id or 0, payload.session_id, last_intent=intent.value, medicine_id=matched.medicine_id, medicine_name=matched.name)
+
     if intent == VoiceIntent.today_medicine:
-        reply = _voice_today_reply(owner_id, session)
-        return {"success": True, "intent": intent.value, "message": reply, "reply": reply}
+        reply = _voice_today_reply(owner_id, session, payload.text)
+        return reply_payload(intent.value, reply, source="database", confidence=1.0, medicine_id=matched.medicine_id, session_id=payload.session_id, corrected_text=corrected_text)
     if intent == VoiceIntent.stock_check:
         reply = _voice_stock_reply(owner_id, session)
-        return {"success": True, "intent": intent.value, "message": reply, "reply": reply}
+        return reply_payload(intent.value, reply, source="database", confidence=1.0, medicine_id=matched.medicine_id, session_id=payload.session_id, corrected_text=corrected_text)
     if intent == VoiceIntent.expiry_check:
         reply = _voice_expiry_reply(owner_id, session)
-        return {"success": True, "intent": intent.value, "message": reply, "reply": reply}
+        return reply_payload(intent.value, reply, source="database", confidence=1.0, medicine_id=matched.medicine_id, session_id=payload.session_id, corrected_text=corrected_text)
     if intent == VoiceIntent.confirm_taken:
         return _voice_confirm_taken(payload, owner_id, user, session)
 
-    reply = "我可以查询今天吃什么药、药品库存和有效期，也可以在你说清药品后确认服药。"
-    return {"success": False, "intent": VoiceIntent.unknown.value, "message": reply, "reply": reply}
+    normalized = gui_fan_hua_yu_yin_wen_ben(corrected_text)
+    medicine_question = any(word in normalized for word in ("怎么吃", "吃多少", "几片", "几次", "剂量", "用法", "饭前", "饭后", "禁忌", "注意", "能不能吃", "可以吃吗", "有效"))
+    follow_up = any(word in normalized for word in ("那怎么", "这个怎么", "它怎么", "饭前", "饭后", "吃多少"))
+    selected_medicine = next((item for item in medicines if item.id == matched.medicine_id), None)
+    if selected_medicine is None and follow_up and context.get("medicine_id") is not None:
+        selected_medicine = session.get(Medicine, int(context["medicine_id"]))
+    if selected_medicine is not None and (medicine_question or follow_up):
+        instruction = find_approved_instruction(session, medicine=selected_medicine)
+        reply = _voice_medicine_info_reply(selected_medicine, corrected_text, instruction)
+        return reply_payload("medicine_info", reply, source="database", confidence=matched.confidence if matched.medicine_id else 0.8, medicine_id=selected_medicine.id, session_id=payload.session_id, corrected_text=corrected_text)
+
+    facts = [medicine_facts(medicine) for medicine in medicines]
+    reminders = session.exec(select(Reminder).where(Reminder.owner_id == owner_id, Reminder.enabled.is_(True)).order_by(Reminder.remind_time)).all()
+    facts.extend(schedule_facts(reminder, session.get(Medicine, reminder.medicine_id)) for reminder in reminders)
+    ai_reply = await answer_voice_ai(corrected_text, "\n".join(facts))
+    if ai_reply and ai_reply.get("reply"):
+        return reply_payload("medical_question", str(ai_reply["reply"]), source="llm", confidence=float(ai_reply.get("confidence", 0.5)), medicine_id=matched.medicine_id, session_id=payload.session_id, corrected_text=corrected_text)
+
+    reply = "我暂时无法确认这个问题。请查看药品说明书，或咨询医生、药师。"
+    return reply_payload("unknown", reply, source="rule", confidence=0.0, medicine_id=matched.medicine_id, session_id=payload.session_id, corrected_text=corrected_text, success=False)
+
+
+async def _voice_intent(payload: VoiceIntentRequest, user: User, session: Session) -> dict:
+    started_at = perf_time.perf_counter()
+    result = await _voice_intent_core(payload, user, session)
+    logger.info(
+        "voice_intent",
+        extra={
+            "trace_id": payload.trace_id or "unknown",
+            "user_id": user.id,
+            "owner_id": payload.owner_id,
+            "session_id": payload.session_id or "default",
+            "intent": result.get("intent"),
+            "source": result.get("source"),
+            "success": result.get("success"),
+            "elapsed_ms": round((perf_time.perf_counter() - started_at) * 1000, 2),
+        },
+    )
+    return result
+
 
 @router.post("/logs/voice-intent")
-def logs_voice_intent(payload: VoiceIntentRequest, user: User = Depends(get_current_user), session: Session = Depends(get_session)):
-    return _voice_intent(payload, user, session)
+async def logs_voice_intent(payload: VoiceIntentRequest, user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    return await _voice_intent(payload, user, session)
 
 
 @router.post("/speaker/intent")
-def speaker_intent(payload: VoiceIntentRequest, user: User = Depends(get_current_user), session: Session = Depends(get_session)):
-    return _voice_intent(payload, user, session)
+async def speaker_intent(payload: VoiceIntentRequest, user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    return await _voice_intent(payload, user, session)

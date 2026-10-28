@@ -4,3 +4,6 @@ sqlmodel==0.0.39
 python-multipart==0.0.20
 pydantic-settings==2.7.1
 faster-whisper>=1.0.0,<2.0.0
+cryptography>=43,<47
+edge-tts>=6.1,<8
+pillow>=10,<12

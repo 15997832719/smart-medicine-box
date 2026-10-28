@@ -277,6 +277,47 @@ def _enrich_from_local_leaflet(result: RecognizeResult) -> RecognizeResult:
     })
 
 
+async def answer_voice_ai(question: str, facts: str) -> dict[str, object] | None:
+    settings = get_settings()
+    if not settings.zhipu_api_key:
+        return None
+    prompt = (
+        "你只能根据下面提供的家庭用药资料回答用户问题，只返回 JSON，不要 Markdown。"
+        "字段必须为 reply、confidence。资料没有写明时，必须回答无法确认，并建议查看药品说明书或咨询医生、药师。"
+        "不得凭记忆补充剂量、禁忌、儿童孕妇用药或药物相互作用，不得诊断疾病，不得建议换药、停药、加量或减量。"
+        "reply 使用简短、清楚的中文，适合语音播报。\n\n"
+        f"用户问题：{question}\n\n家庭用药资料：\n{facts[:12000]}"
+    )
+    body = json.dumps(
+        {
+            "model": settings.zhipu_text_model,
+            "temperature": 0.1,
+            "messages": [{"role": "user", "content": prompt}],
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+    request = Request(
+        "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        data=body,
+        headers={"Authorization": f"Bearer {settings.zhipu_api_key}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=20) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        value = _json_from_model_text(_model_content(result))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, MedicineRecognitionError, KeyError, TypeError, ValueError):
+        return None
+    reply = str(value.get("reply") or "").strip()
+    if not reply:
+        return None
+    try:
+        confidence = max(0.0, min(1.0, float(value.get("confidence", 0.5))))
+    except (TypeError, ValueError):
+        confidence = 0.5
+    return {"reply": reply, "confidence": confidence}
+
+
 async def parse_instruction_ai(text: str) -> InstructionParseResult:
     gui_fan_hua_wen_ben = text.strip()
     if not gui_fan_hua_wen_ben:

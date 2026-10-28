@@ -11,6 +11,14 @@
     {
       "name": "EntryAbility_label",
       "value": "智能药箱"
+    },
+    {
+      "name": "microphone_reason",
+      "value": "用于语音提问和录音上传后的用药语音转写"
+    },
+    {
+      "name": "camera_reason",
+      "value": "用于刷脸登录时拍摄人脸照片"
     }
   ]
 }

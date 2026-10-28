@@ -1,8 +1,12 @@
 from contextlib import asynccontextmanager
+import asyncio
+from pathlib import Path
+import hashlib
 from collections import defaultdict, deque
 from datetime import date, time, timedelta
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -14,6 +18,12 @@ from app.auth import sheng_cheng_mi_ma_zhai_yao, router as auth_router
 from app.config import get_settings
 from app.database import engine, init_db
 from app.dueros import router as dueros_router
+from app.face_auth import router as face_router, sms_router
+from app.device_agent import router as device_agent_router, agent_router
+from app.device_events import router as device_events_router, agent_router as device_events_agent_router
+from app.tts import router as tts_router
+from app.instructions import router as instructions_router
+from app.medication_scheduler import medication_scheduler_loop
 from app.models import FamilyLink, IntakeLog, Medicine, Reminder, ReminderFrequency, User, UserRole
 from app.routers import router
 from app.services import biao_qian_zhuan_zi_fu_chuan
@@ -25,20 +35,32 @@ API_PREFIX = settings.api_prefix
 
 class SimpleRateLimitMiddleware(BaseHTTPMiddleware):
 
-    def __init__(self, app, limit: int = 120, window: int = 60):
+    def __init__(self, app, limit: int = 300, window: int = 60, realtime_limit: int = 600):
         super().__init__(app)
-        self.limit, self.window = limit, window
+        self.limit, self.window, self.realtime_limit = limit, window, realtime_limit
         self.hits = defaultdict(deque)
 
+    @staticmethod
+    def _bucket_key(request: Request) -> str:
+        token = request.headers.get("authorization") or request.headers.get("x-agent-token")
+        if token:
+            return hashlib.sha256(token.encode("utf-8")).hexdigest()[:24]
+        return request.client.host if request.client else "unknown"
+
+    def _limit_for(self, path: str) -> int:
+        if "/camera/preview/" in path or path.endswith("/camera/preview-frame") or "/device-agent/" in path:
+            return self.realtime_limit
+        return self.limit
+
     async def dispatch(self, request: Request, call_next):
-        if request.url.path == "/health":
+        if request.url.path in {"/health", "/api/v1/health"}:
             return await call_next(request)
-        key = request.client.host if request.client else "unknown"
+        key = self._bucket_key(request)
         now = _time.monotonic()
         bucket = self.hits[key]
         while bucket and now - bucket[0] > self.window:
             bucket.popleft()
-        if len(bucket) >= self.limit:
+        if len(bucket) >= self._limit_for(request.url.path):
             return JSONResponse({"detail": "请求过于频繁，请稍后再试"}, status_code=429)
         bucket.append(now)
         return await call_next(request)
@@ -144,10 +166,22 @@ def chu_shi_hua_yan_shi_shu_ju() -> None:
 async def lifespan(app: FastAPI):
     init_db()
     chu_shi_hua_yan_shi_shu_ju()
-    yield
+    scheduler_task = asyncio.create_task(medication_scheduler_loop())
+    try:
+        yield
+    finally:
+        scheduler_task.cancel()
+        try:
+            await scheduler_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
+
+_UPLOAD_ROOT = Path(__file__).resolve().parents[1] / "uploads"
+_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(_UPLOAD_ROOT)), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,
@@ -161,3 +195,11 @@ app.add_middleware(SimpleRateLimitMiddleware)
 app.include_router(router, prefix=API_PREFIX)
 app.include_router(auth_router, prefix=API_PREFIX)
 app.include_router(dueros_router, prefix=API_PREFIX)
+app.include_router(instructions_router, prefix=API_PREFIX)
+app.include_router(face_router, prefix=API_PREFIX)
+app.include_router(sms_router, prefix=API_PREFIX)
+app.include_router(tts_router, prefix=API_PREFIX)
+app.include_router(device_agent_router, prefix=API_PREFIX)
+app.include_router(agent_router, prefix=API_PREFIX)
+app.include_router(device_events_router, prefix=API_PREFIX)
+app.include_router(device_events_agent_router, prefix=API_PREFIX)

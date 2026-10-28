@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/design_system.dart';
 import '../../core/theme.dart';
 import '../../models/medicine.dart';
 import '../../services/api_service.dart';
@@ -8,7 +9,6 @@ import 'ai_recognize_screen.dart';
 class MedicineListScreen extends StatefulWidget {
   const MedicineListScreen({super.key, this.elderId});
 
-  
   final int? elderId;
 
   @override
@@ -46,74 +46,94 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: ElderTheme.bgColor,
-      appBar: AppBar(title: const Text('药品管理')),
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('药品管理'),
+        actions: [
+          IconButton(
+            tooltip: '拍照识药',
+            onPressed: _openRecognize,
+            icon: const Icon(Icons.camera_alt_rounded),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
       body: Column(
         children: [
           _buildSearch(),
-          _buildFilters(),
           Expanded(
             child: RefreshIndicator(
               onRefresh: _loadMedicines,
               child: _jia_zai_zhong
                   ? const Center(child: CircularProgressIndicator())
                   : _cuo_wu != null
-                      ? _buildMessage(Icons.cloud_off_rounded, '加载失败', _cuo_wu!, retry: true)
-                      : _filtered.isEmpty
-                          ? _buildMessage(Icons.medication_rounded, '暂无药品', '点击右下角按钮拍照识别并添加药品')
-                          : ListView.separated(
-                              padding: const EdgeInsets.fromLTRB(14, 8, 14, 100),
-                              itemCount: _filtered.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 10),
-                              itemBuilder: (context, index) => _buildMedicineItem(_filtered[index]),
-                            ),
+                  ? _buildMessage(Icons.cloud_off_rounded, '加载失败', _cuo_wu!, retry: true)
+                  : _filtered.isEmpty
+                  ? _buildMessage(Icons.medication_rounded, '暂无药品', '点击右下角按钮拍照识别并添加药品')
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(18, 4, 18, 110),
+                      itemCount: _filtered.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 9),
+                      itemBuilder: (context, index) => _buildMedicineItem(_filtered[index]),
+                    ),
             ),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(context).push(ElderPageRoute(page: const AIRecognizeScreen())).then((_) => _loadMedicines()),
-        icon: const Icon(Icons.camera_alt_rounded),
-        label: const Text('拍照识药'),
-      ),
-    );
-  }
-
-  Widget _buildSearch() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
-      color: ElderTheme.cardColor,
-      child: TextField(
-        controller: _searchController,
-        onChanged: (_) => setState(() {}),
-        decoration: InputDecoration(
-          hintText: '搜索药品名称',
-          prefixIcon: const Icon(Icons.search_rounded),
-          suffixIcon: _searchController.text.isEmpty
-              ? null
-              : IconButton(
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() {});
-                  },
-                  icon: const Icon(Icons.close_rounded),
-                ),
+      floatingActionButton: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _openRecognize,
+          borderRadius: BorderRadius.circular(22),
+          child: Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              gradient: AppGradients.primaryButton,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: AppShadows.blue,
+            ),
+            child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 30),
+          ),
         ),
       ),
     );
   }
 
+  Widget _buildSearch() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 6, 18, 0),
+      child: Column(
+        children: [
+          TextField(
+            controller: _searchController,
+            onChanged: (_) => setState(() {}),
+            style: const TextStyle(fontSize: 17),
+            decoration: InputDecoration(
+              hintText: '搜索药品名称',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: _searchController.text.isEmpty
+                  ? null
+                  : IconButton(
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {});
+                      },
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _buildFilters(),
+        ],
+      ),
+    );
+  }
+
   Widget _buildFilters() {
-    final filters = const [
-      ('all', '全部'),
-      ('normal', '正常'),
-      ('expiring', '临期'),
-      ('expired', '过期'),
-    ];
-    return Container(
+    final filters = const [('all', '全部'), ('normal', '正常'), ('expiring', '临期'), ('expired', '过期')];
+    return SizedBox(
       width: double.infinity,
-      color: ElderTheme.cardColor,
-      padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
       child: Wrap(
         spacing: 8,
         children: filters.map((item) {
@@ -122,7 +142,12 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
             label: Text(item.$2),
             selected: selected,
             onSelected: (_) => setState(() => _filter = item.$1),
-            selectedColor: ElderTheme.primaryColor.withOpacity(0.18),
+            selectedColor: const Color(0xFF2179D2),
+            labelStyle: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: selected ? Colors.white : AppColors.muted,
+            ),
           );
         }).toList(),
       ),
@@ -132,49 +157,74 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
   Widget _buildMedicineItem(Medicine medicine) {
     final status = _status(medicine);
     final color = _statusColor(status);
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
+    return AppGlassCard(
+      radius: 23,
+      padding: const EdgeInsets.fromLTRB(13, 13, 8, 13),
       onTap: () => _showDetail(medicine),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: ElderTheme.cardColor,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: color.withOpacity(status == 'normal' ? 0.08 : 0.36)),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(16)),
-              child: Icon(Icons.medication_rounded, color: color, size: 32),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(medicine.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 5),
-                  Text(
-                    medicine.dosage ?? medicine.frequency ?? medicine.category ?? '未填写用法',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: ElderTheme.textSecondary, fontSize: 15),
+      child: Row(
+        children: [
+          AppIconTile(
+            icon: Icons.medication_rounded,
+            size: 50,
+            iconSize: 27,
+            background: color.withValues(alpha: 0.13),
+            color: color,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  medicine.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.ink,
                   ),
-                  const SizedBox(height: 5),
-                  Text(_validText(medicine), style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w600)),
-                ],
-              ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  medicine.dosage ?? medicine.frequency ?? medicine.category ?? '未填写用法',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _validText(medicine),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    Text(
+                      '剩 ${medicine.stockCount} 片',
+                      style: const TextStyle(
+                        color: AppColors.ink2,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            IconButton(
-              onPressed: () => _delete(medicine),
-              icon: const Icon(Icons.delete_outline_rounded, color: ElderTheme.errorColor),
-            ),
-          ],
-        ),
+          ),
+          IconButton(
+            onPressed: () => _delete(medicine),
+            icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFD75A63), size: 22),
+          ),
+        ],
       ),
     );
   }
@@ -183,21 +233,50 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
-        const SizedBox(height: 120),
-        Icon(icon, size: 76, color: ElderTheme.textSecondary.withOpacity(0.45)),
-        const SizedBox(height: 16),
-        Center(child: Text(title, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold))),
-        const SizedBox(height: 8),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, color: ElderTheme.textSecondary)),
+        const SizedBox(height: 110),
+        AppGlassCard(
+          margin: const EdgeInsets.symmetric(horizontal: 24),
+          radius: 28,
+          padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
+          child: Column(
+            children: [
+              AppIconTile(icon: icon, size: 78, iconSize: 40, background: AppColors.blueTint),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.ink,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16, color: AppColors.muted, height: 1.5),
+              ),
+              if (retry) ...[
+                const SizedBox(height: 18),
+                AppGradientButton(
+                  label: '重试',
+                  icon: Icons.refresh_rounded,
+                  height: 52,
+                  fontSize: 18,
+                  onPressed: _loadMedicines,
+                ),
+              ],
+            ],
+          ),
         ),
-        if (retry) ...[
-          const SizedBox(height: 18),
-          Center(child: ElevatedButton.icon(onPressed: _loadMedicines, icon: const Icon(Icons.refresh_rounded), label: const Text('重试'))),
-        ],
       ],
     );
+  }
+
+  void _openRecognize() {
+    Navigator.of(context)
+        .push(ElderPageRoute(page: AIRecognizeScreen(elderId: widget.elderId)))
+        .then((_) => _loadMedicines());
   }
 
   void _showDetail(Medicine medicine) {
@@ -216,7 +295,10 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
             _detailRow('厂家', medicine.manufacturer),
             _detailRow('用法用量', medicine.dosage),
             _detailRow('服用频次', medicine.frequency),
-            _detailRow('有效期', medicine.you_xiao_ri_qi == null ? null : _date(medicine.you_xiao_ri_qi!)),
+            _detailRow(
+              '有效期',
+              medicine.you_xiao_ri_qi == null ? null : _date(medicine.you_xiao_ri_qi!),
+            ),
             _detailRow('库存', '还剩 ${medicine.stockCount} 片'),
             _detailRow('提醒数量', '少于 ${medicine.lowStockThreshold} 片时提醒你'),
             _detailRow('注意事项', medicine.precautions),
@@ -239,7 +321,13 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 86, child: Text(label, style: const TextStyle(color: ElderTheme.textSecondary, fontSize: 15))),
+          SizedBox(
+            width: 86,
+            child: Text(
+              label,
+              style: const TextStyle(color: ElderTheme.textSecondary, fontSize: 15),
+            ),
+          ),
           Expanded(child: Text(value, style: const TextStyle(fontSize: 16, height: 1.35))),
         ],
       ),
@@ -285,7 +373,9 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
       await _loadMedicines();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('删除失败：$e'), backgroundColor: ElderTheme.errorColor));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('删除失败：$e'), backgroundColor: ElderTheme.errorColor));
     }
   }
 
@@ -314,5 +404,6 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
     return '有效期：${_date(medicine.you_xiao_ri_qi!)}';
   }
 
-  String _date(DateTime date) => '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  String _date(DateTime date) =>
+      '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 }

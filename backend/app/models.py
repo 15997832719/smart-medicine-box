@@ -23,6 +23,12 @@ class User(SQLModel, table=True):
     password_hash: str = Field(max_length=300)
     role: UserRole = Field(default=UserRole.elder, index=True)
     nickname: str | None = Field(default=None, max_length=80)
+    avatar_url: str | None = Field(default=None, max_length=500)
+    gender: str | None = Field(default=None, max_length=16)
+    birth_date: date | None = None
+    emergency_contact_name: str | None = Field(default=None, max_length=80)
+    emergency_contact_phone: str | None = Field(default=None, max_length=32)
+    allergy_notes: str | None = Field(default=None, max_length=500)
     bind_code_hash: str | None = Field(default=None, max_length=128)
     bind_code_expires_at: datetime | None = None
     is_active: bool = True
@@ -38,6 +44,33 @@ class DeviceToken(SQLModel, table=True):
     registration_id: str = Field(index=True, max_length=255)
     platform: str = Field(default="android", max_length=32)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+class ActivationRequest(SQLModel, table=True):
+    __tablename__ = "activation_requests"
+
+    id: int | None = Field(default=None, primary_key=True)
+    device_id: str = Field(index=True, unique=True, max_length=80)
+    code_hash: str = Field(max_length=128)
+    secret_hash: str = Field(max_length=128)
+    elder_id: int | None = Field(default=None, foreign_key="users.id", index=True)
+    claimed_at: datetime | None = None
+    expires_at: datetime = Field(nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class AuthDevice(SQLModel, table=True):
+    __tablename__ = "auth_devices"
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    device_id: str = Field(index=True, unique=True, max_length=80)
+    platform: str = Field(default="unknown", max_length=32)
+    refresh_token_hash: str = Field(max_length=128)
+    last_seen_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    expires_at: datetime | None = None
+    revoked_at: datetime | None = None
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
 
 class SpeakerBinding(SQLModel, table=True):
     __tablename__ = "speaker_bindings"
@@ -106,6 +139,104 @@ class IntakeLog(SQLModel, table=True):
     taken_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     dose: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=300)
+
+
+class InstructionReviewStatus(str, Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+    superseded = "superseded"
+
+
+class DrugInstruction(SQLModel, table=True):
+    __tablename__ = "drug_instructions"
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(index=True, max_length=120)
+    aliases: str | None = Field(default=None, max_length=300)
+    specification: str | None = Field(default=None, max_length=160)
+    manufacturer: str | None = Field(default=None, max_length=160)
+    approval_number: str | None = Field(default=None, index=True, max_length=80)
+    dosage: str | None = Field(default=None, max_length=2000)
+    contraindications: str | None = Field(default=None, max_length=2000)
+    precautions: str | None = Field(default=None, max_length=2000)
+    adverse_reactions: str | None = Field(default=None, max_length=2000)
+    interactions: str | None = Field(default=None, max_length=2000)
+    source_url: str = Field(max_length=1000)
+    source_type: str = Field(default="nmpa", max_length=60)
+    source_file_path: str | None = Field(default=None, max_length=500)
+    document_date: date | None = None
+    retrieved_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    file_hash: str = Field(index=True, max_length=128)
+    version: str = Field(default="1", max_length=80)
+    review_status: InstructionReviewStatus = Field(default=InstructionReviewStatus.pending, index=True)
+    reviewed_by: int | None = Field(default=None, foreign_key="users.id")
+    reviewed_at: datetime | None = None
+    supersedes_id: int | None = Field(default=None, foreign_key="drug_instructions.id")
+    effective_until: date | None = None
+    raw_excerpt: str | None = Field(default=None, max_length=6000)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class FaceConsent(SQLModel, table=True):
+    __tablename__ = "face_consents"
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", unique=True, index=True)
+    version: str = Field(default="v1", max_length=40)
+    agreed_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    client_ip: str | None = Field(default=None, max_length=80)
+    user_agent: str | None = Field(default=None, max_length=300)
+
+
+class FaceProfile(SQLModel, table=True):
+    __tablename__ = "face_profiles"
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", unique=True, index=True)
+    provider: str = Field(default="tencent", max_length=40)
+    person_id_encrypted: str = Field(max_length=1000)
+    face_id_encrypted: str | None = Field(default=None, max_length=1000)
+    status: str = Field(default="active", index=True, max_length=32)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    last_verified_at: datetime | None = None
+
+
+class FaceLoginAttempt(SQLModel, table=True):
+    __tablename__ = "face_login_attempts"
+
+    id: int | None = Field(default=None, primary_key=True)
+    device_key: str = Field(index=True, max_length=120)
+    client_ip: str | None = Field(default=None, max_length=80)
+    success: bool = Field(default=False, index=True)
+    score: int | None = None
+    reason: str | None = Field(default=None, max_length=120)
+    matched_user_id: int | None = Field(default=None, foreign_key="users.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+
+
+class FaceLoginLock(SQLModel, table=True):
+    __tablename__ = "face_login_locks"
+
+    id: int | None = Field(default=None, primary_key=True)
+    device_key: str = Field(unique=True, index=True, max_length=120)
+    failures: int = Field(default=0, ge=0)
+    blocked_until: datetime | None = None
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class SmsLoginCode(SQLModel, table=True):
+    __tablename__ = "sms_login_codes"
+
+    id: int | None = Field(default=None, primary_key=True)
+    phone: str = Field(index=True, max_length=32)
+    code_hash: str = Field(max_length=128)
+    expires_at: datetime = Field(nullable=False, index=True)
+    attempts: int = Field(default=0, ge=0)
+    used_at: datetime | None = None
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
 
 
 class AuditLog(SQLModel, table=True):

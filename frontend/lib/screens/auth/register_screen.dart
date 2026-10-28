@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/auth_service.dart';
+import '../../core/design_system.dart';
 import '../../core/theme.dart';
 import '../child/child_home_screen.dart';
-import '../elder/elder_home_screen.dart';
+import 'face_enroll_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -35,15 +36,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: ElderTheme.bgColor,
-      appBar: AppBar(
-        title: const Text('注册账号'),
-        backgroundColor: ElderTheme.primaryColor,
-      ),
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(title: const Text('注册账号')),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
           children: [
+            const Text(
+              '选择你的使用身份',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: AppColors.ink),
+            ),
+            const SizedBox(height: 7),
+            const Text(
+              '老人管理自己，家属远程守护',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16, color: AppColors.muted),
+            ),
+            const SizedBox(height: 18),
             _buildRoleSelector(),
             const SizedBox(height: 18),
             _buildForm(),
@@ -61,8 +71,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
             role: 'elder',
             title: '老人端',
             subtitle: '管理自己的药品和提醒',
-            icon: Icons.elderly_rounded,
-            color: ElderTheme.primaryColor,
+            icon: Icons.person_rounded,
+            color: AppColors.blue,
           ),
         ),
         const SizedBox(width: 12),
@@ -71,8 +81,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
             role: 'child',
             title: '家属端',
             subtitle: '查看老人服药情况',
-            icon: Icons.family_restroom_rounded,
-            color: ElderTheme.successColor,
+            icon: Icons.people_alt_rounded,
+            color: AppColors.mintDeep,
           ),
         ),
       ],
@@ -88,26 +98,51 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }) {
     final selected = _role == role;
     return InkWell(
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(24),
       onTap: () => setState(() => _role = role),
-      child: Container(
-        padding: const EdgeInsets.all(14),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 17),
         decoration: BoxDecoration(
-          color: selected ? color.withOpacity(0.12) : ElderTheme.cardColor,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: selected ? color : ElderTheme.dividerColor, width: selected ? 2 : 1),
+          gradient: selected
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFE3F8FF), Color(0xFFE9EFFF)],
+                )
+              : AppGradients.glassSoft,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: selected ? color.withValues(alpha: 0.76) : Colors.white,
+            width: selected ? 1.6 : 1.1,
+          ),
+          boxShadow: AppShadows.soft,
         ),
         child: Column(
           children: [
-            Icon(icon, color: color, size: 42),
-            const SizedBox(height: 8),
-            Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: selected ? color : ElderTheme.textPrimary)),
+            AppIconTile(
+              icon: icon,
+              size: 62,
+              iconSize: 32,
+              gradient: selected ? AppGradients.primaryButton : null,
+              background: selected ? null : Colors.white.withValues(alpha: 0.74),
+              color: selected ? Colors.white : AppColors.muted,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                color: AppColors.ink,
+              ),
+            ),
             const SizedBox(height: 4),
-            Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: ElderTheme.textSecondary)),
-            if (selected) ...[
-              const SizedBox(height: 8),
-              Icon(Icons.check_circle_rounded, color: color, size: 22),
-            ],
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: AppColors.muted2, height: 1.35),
+            ),
           ],
         ),
       ),
@@ -123,20 +158,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
           TextFormField(
             controller: _phoneController,
             keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(labelText: '手机号', prefixIcon: Icon(Icons.phone_android_rounded)),
+            textInputAction: TextInputAction.next,
+            style: const TextStyle(fontSize: 19),
+            decoration: const InputDecoration(
+              labelText: '手机号',
+              prefixIcon: Icon(Icons.phone_android_rounded),
+            ),
             validator: (value) => value == null || value.trim().length < 6 ? '请输入手机号' : null,
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           TextFormField(
             controller: _nicknameController,
-            decoration: const InputDecoration(labelText: '昵称', prefixIcon: Icon(Icons.person_outline_rounded)),
+            textInputAction: TextInputAction.next,
+            style: const TextStyle(fontSize: 19),
+            decoration: const InputDecoration(
+              labelText: '昵称',
+              prefixIcon: Icon(Icons.person_outline_rounded),
+            ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           TextFormField(
             controller: _passwordController,
             obscureText: _obscure,
+            textInputAction: TextInputAction.next,
+            style: const TextStyle(fontSize: 19),
             decoration: InputDecoration(
-              labelText: '密码',
+              labelText: '密码（至少 6 位）',
               prefixIcon: const Icon(Icons.lock_outline_rounded),
               suffixIcon: IconButton(
                 icon: Icon(_obscure ? Icons.visibility_rounded : Icons.visibility_off_rounded),
@@ -145,27 +192,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             validator: (value) => value == null || value.length < 6 ? '密码至少 6 位' : null,
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           TextFormField(
             controller: _confirmController,
             obscureText: _obscure,
-            decoration: const InputDecoration(labelText: '确认密码', prefixIcon: Icon(Icons.lock_reset_rounded)),
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => _register(),
+            style: const TextStyle(fontSize: 19),
+            decoration: const InputDecoration(
+              labelText: '确认密码',
+              prefixIcon: Icon(Icons.lock_reset_rounded),
+            ),
             validator: (value) => value != _passwordController.text ? '两次密码不一致' : null,
           ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
+          const SizedBox(height: 20),
+          AppGradientButton(
+            label: '完成注册',
+            icon: Icons.check_circle_outline_rounded,
+            loading: _jia_zai_zhong,
             onPressed: _jia_zai_zhong ? null : _register,
-            icon: _jia_zai_zhong
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.check_circle_outline_rounded),
-            label: const Text('完成注册'),
           ),
           const SizedBox(height: 12),
-          const Text(
-            '注册信息会保存到服务器；请使用本人手机号并妥善保管密码。',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: ElderTheme.textSecondary),
-          ),
+          const AppNotice(text: '注册信息会保存到服务器；请使用本人手机号并妥善保管密码。'),
         ],
       ),
     );
@@ -185,7 +233,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _jia_zai_zhong = false);
     if (ok) {
       Navigator.of(context).pushAndRemoveUntil(
-        ElderPageRoute(page: _role == 'child' ? const ChildHomeScreen() : const ElderHomeScreen()),
+        ElderPageRoute(page: _role == 'child' ? const ChildHomeScreen() : const FaceEnrollScreen()),
         (_) => false,
       );
     } else {

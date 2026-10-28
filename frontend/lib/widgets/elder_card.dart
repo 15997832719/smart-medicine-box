@@ -1,27 +1,20 @@
 import 'package:flutter/material.dart';
+import '../core/design_system.dart';
 import '../core/theme.dart';
 
-
 class ElderCard extends StatelessWidget {
-  
   final Widget child;
-  
-  
+
   final VoidCallback? onTap;
-  
-  
+
   final EdgeInsetsGeometry? padding;
-  
-  
+
   final EdgeInsetsGeometry? margin;
-  
-  
+
   final Color? color;
-  
-  
+
   final bool hasShadow;
-  
-  
+
   final Border? border;
 
   const ElderCard({
@@ -37,37 +30,18 @@ class ElderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: margin ?? const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: color ?? ElderTheme.cardColor,
-        borderRadius: BorderRadius.circular(ElderTheme.cardRadius),
-        border: border,
-        boxShadow: hasShadow
-            ? [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ]
-            : null,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(ElderTheme.cardRadius),
-          child: Padding(
-            padding: padding ?? const EdgeInsets.all(20),
-            child: child,
-          ),
-        ),
-      ),
+    return AppGlassCard(
+      margin: margin ?? const EdgeInsets.symmetric(horizontal: 0, vertical: 6),
+      padding: padding ?? const EdgeInsets.all(18),
+      onTap: onTap,
+      color: color,
+      border: border,
+      shadow: hasShadow,
+      radius: ElderTheme.cardRadius,
+      child: child,
     );
   }
 }
-
 
 class ElderFuncCard extends StatelessWidget {
   final IconData icon;
@@ -101,11 +75,7 @@ class ElderFuncCard extends StatelessWidget {
               color: (iconColor ?? ElderTheme.primaryColor).withOpacity(0.12),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(
-              icon,
-              size: 30,
-              color: iconColor ?? ElderTheme.primaryColor,
-            ),
+            child: Icon(icon, size: 30, color: iconColor ?? ElderTheme.primaryColor),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -126,13 +96,12 @@ class ElderFuncCard extends StatelessWidget {
   }
 }
 
-
 class MedicineCard extends StatelessWidget {
   final String name;
   final String? spec;
   final String? dosage;
   final DateTime? you_xiao_ri_qi;
-  final String? status; 
+  final String? status;
   final VoidCallback? onTap;
   final VoidCallback? onDelete;
 
@@ -153,7 +122,6 @@ class MedicineCard extends StatelessWidget {
       onTap: onTap,
       child: Row(
         children: [
-          
           Container(
             width: 72,
             height: 72,
@@ -161,14 +129,10 @@ class MedicineCard extends StatelessWidget {
               color: _getStatusColor().withOpacity(0.12),
               borderRadius: BorderRadius.circular(18),
             ),
-            child: Icon(
-              Icons.medication_rounded,
-              size: 40,
-              color: _getStatusColor(),
-            ),
+            child: Icon(Icons.medication_rounded, size: 40, color: _getStatusColor()),
           ),
           const SizedBox(width: 16),
-          
+
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -187,10 +151,7 @@ class MedicineCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     spec!,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      color: ElderTheme.textSecondary,
-                    ),
+                    style: const TextStyle(fontSize: 18, color: ElderTheme.textSecondary),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -199,32 +160,26 @@ class MedicineCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     '用法：$dosage',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: ElderTheme.textSecondary,
-                    ),
+                    style: const TextStyle(fontSize: 16, color: ElderTheme.textSecondary),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
-                if (you_xiao_ri_qi != null) ...[
-                  const SizedBox(height: 6),
-                  _buildValidDateBadge(),
-                ],
+                if (you_xiao_ri_qi != null) ...[const SizedBox(height: 6), _buildValidDateBadge()],
               ],
             ),
           ),
           if (onDelete != null)
             IconButton(
-              icon: const Icon(Icons.delete_outline_rounded, size: 28, color: ElderTheme.errorColor),
+              icon: const Icon(
+                Icons.delete_outline_rounded,
+                size: 28,
+                color: ElderTheme.errorColor,
+              ),
               onPressed: onDelete,
             )
           else
-            const Icon(
-              Icons.chevron_right_rounded,
-              size: 32,
-              color: ElderTheme.textSecondary,
-            ),
+            const Icon(Icons.chevron_right_rounded, size: 32, color: ElderTheme.textSecondary),
         ],
       ),
     );
@@ -243,8 +198,7 @@ class MedicineCard extends StatelessWidget {
 
   Widget _buildValidDateBadge() {
     final isExpired = you_xiao_ri_qi!.isBefore(DateTime.now());
-    final isExpiring = !isExpired && 
-        you_xiao_ri_qi!.difference(DateTime.now()).inDays <= 7;
+    final isExpiring = !isExpired && you_xiao_ri_qi!.difference(DateTime.now()).inDays <= 7;
 
     String text;
     Color color;
@@ -268,16 +222,11 @@ class MedicineCard extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: color,
-        ),
+        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color),
       ),
     );
   }
 }
-
 
 class ElderStatusCard extends StatelessWidget {
   final String elderName;
@@ -300,29 +249,24 @@ class ElderStatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final allTaken = takenCount == totalCount && totalCount > 0;
-    
+
     return ElderCard(
       onTap: onTap,
-      border: hasMissed 
+      border: hasMissed
           ? Border.all(color: ElderTheme.errorColor.withOpacity(0.5), width: 2)
           : null,
       child: Row(
         children: [
-          
           CircleAvatar(
             radius: 36,
             backgroundColor: ElderTheme.primaryColor.withOpacity(0.12),
             backgroundImage: elderAvatar != null ? NetworkImage(elderAvatar!) : null,
             child: elderAvatar == null
-                ? const Icon(
-                    Icons.person,
-                    size: 40,
-                    color: ElderTheme.primaryColor,
-                  )
+                ? const Icon(Icons.person, size: 40, color: ElderTheme.primaryColor)
                 : null,
           ),
           const SizedBox(width: 16),
-          
+
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -340,27 +284,20 @@ class ElderStatusCard extends StatelessWidget {
                   children: [
                     _buildStatusBadge(
                       text: '今日 $takenCount/$totalCount',
-                      color: allTaken 
-                          ? ElderTheme.successColor 
+                      color: allTaken
+                          ? ElderTheme.successColor
                           : (hasMissed ? ElderTheme.errorColor : ElderTheme.warningColor),
                     ),
                     if (hasMissed) ...[
                       const SizedBox(width: 8),
-                      _buildStatusBadge(
-                        text: '有漏服',
-                        color: ElderTheme.errorColor,
-                      ),
+                      _buildStatusBadge(text: '有漏服', color: ElderTheme.errorColor),
                     ],
                   ],
                 ),
               ],
             ),
           ),
-          const Icon(
-            Icons.chevron_right_rounded,
-            size: 32,
-            color: ElderTheme.textSecondary,
-          ),
+          const Icon(Icons.chevron_right_rounded, size: 32, color: ElderTheme.textSecondary),
         ],
       ),
     );
@@ -375,11 +312,7 @@ class ElderStatusCard extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          color: color,
-        ),
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: color),
       ),
     );
   }

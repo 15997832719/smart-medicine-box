@@ -85,6 +85,87 @@ class Settings(BaseSettings):
     jpush_app_key: str | None = Field(default=None, validation_alias=AliasChoices("SMB_JPUSH_APP_KEY", "JPUSH_APP_KEY"))
     jpush_master_secret: str | None = Field(default=None, validation_alias=AliasChoices("SMB_JPUSH_MASTER_SECRET", "JPUSH_MASTER_SECRET"))
 
+    face_auth_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("SMB_FACE_AUTH_ENABLED", "FACE_AUTH_ENABLED", "face_auth_enabled"),
+    )
+    face_provider: str = Field(
+        default="mock",
+        validation_alias=AliasChoices("SMB_FACE_PROVIDER", "FACE_PROVIDER", "face_provider"),
+    )
+    face_encryption_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("SMB_FACE_ENCRYPTION_KEY", "FACE_ENCRYPTION_KEY", "face_encryption_key"),
+    )
+    face_search_threshold: int = Field(
+        default=80,
+        validation_alias=AliasChoices("SMB_FACE_SEARCH_THRESHOLD", "FACE_SEARCH_THRESHOLD", "face_search_threshold"),
+        ge=0,
+        le=100,
+    )
+    face_max_failures: int = Field(
+        default=5,
+        validation_alias=AliasChoices("SMB_FACE_MAX_FAILURES", "FACE_MAX_FAILURES", "face_max_failures"),
+        ge=1,
+        le=20,
+    )
+    face_lock_minutes: int = Field(
+        default=15,
+        validation_alias=AliasChoices("SMB_FACE_LOCK_MINUTES", "FACE_LOCK_MINUTES", "face_lock_minutes"),
+        ge=1,
+        le=1440,
+    )
+    tencent_secret_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("SMB_TENCENT_SECRET_ID", "TENCENT_SECRET_ID", "tencent_secret_id"),
+    )
+    tencent_secret_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("SMB_TENCENT_SECRET_KEY", "TENCENT_SECRET_KEY", "tencent_secret_key"),
+    )
+    tencent_face_region: str = Field(
+        default="ap-guangzhou",
+        validation_alias=AliasChoices("SMB_TENCENT_FACE_REGION", "TENCENT_FACE_REGION", "tencent_face_region"),
+    )
+    tencent_face_group_id: str = Field(
+        default="smart-medicine-box",
+        validation_alias=AliasChoices("SMB_TENCENT_FACE_GROUP_ID", "TENCENT_FACE_GROUP_ID", "tencent_face_group_id"),
+    )
+    sms_provider: str = Field(
+        default="debug",
+        validation_alias=AliasChoices("SMB_SMS_PROVIDER", "SMS_PROVIDER", "sms_provider"),
+    )
+    sms_code_ttl_minutes: int = Field(
+        default=5,
+        validation_alias=AliasChoices("SMB_SMS_CODE_TTL_MINUTES", "SMS_CODE_TTL_MINUTES", "sms_code_ttl_minutes"),
+        ge=1,
+        le=30,
+    )
+
+    device_agent_token: str = Field(
+        default="dev-device-agent-token",
+        validation_alias=AliasChoices("SMB_DEVICE_AGENT_TOKEN", "DEVICE_AGENT_TOKEN", "device_agent_token"),
+    )
+    device_camera_dir: str = Field(
+        default=str(Path(__file__).resolve().parents[1] / "data" / "camera_assets"),
+        validation_alias=AliasChoices("SMB_DEVICE_CAMERA_DIR", "DEVICE_CAMERA_DIR", "device_camera_dir"),
+    )
+    device_camera_max_upload_mb: int = Field(
+        default=200,
+        validation_alias=AliasChoices(
+            "SMB_DEVICE_CAMERA_MAX_UPLOAD_MB",
+            "DEVICE_CAMERA_MAX_UPLOAD_MB",
+            "device_camera_max_upload_mb",
+        ),
+        ge=1,
+        le=1024,
+    )
+
+    tts_voice: str = Field(
+        default="zh-CN-XiaoxiaoNeural",
+        validation_alias=AliasChoices("SMB_TTS_VOICE", "TTS_VOICE", "tts_voice"),
+    )
+
     model_config = SettingsConfigDict(env_file=".env", env_prefix="SMB_", extra="ignore")
 
 

@@ -130,3 +130,58 @@ Authorization: Bearer <access_token>
 老人只能访问自己的数据；家属只能访问已经绑定的老人数据。旧版本数据库启动时会自动添加所属用户字段，并将旧演示数据归属到演示老人账号。生产环境请设置 `SMB_SEED_DEMO_DATA=false` 并更换 `SMB_JWT_SECRET`。
 
 图片识别会将药盒图片发送给智谱视觉模型；说明书解析会将文本发送给智谱文本模型。模型无法确认时接口会返回 422，不会伪造药品名称或用法。请人工核对结果，并以说明书和医生指导为准。
+
+## 适老化开通与设备管理
+
+- `POST /api/v1/auth/activation/start`：老人端生成 6 位开通码。
+- `POST /api/v1/auth/activation/claim`：家属端使用开通码代办开通。
+- `POST /api/v1/auth/activation/exchange`：老人设备用设备密钥换取访问令牌。
+- `GET /api/v1/auth/devices`：查看当前账号的绑定设备。
+- `DELETE /api/v1/auth/devices/{id}`：撤销单台设备。
+- `DELETE /api/v1/auth/devices`：撤销全部设备。
+
+## 说明书资料库
+
+导入 JSON 示例：
+
+```powershell
+cd D:\smart-medicine-box\backend
+.\.venv\Scripts\python.exe import_drug_instructions.py .\examples\drug_instructions.example.json
+```
+
+导入官方纯文本或可提取文本的 PDF，必须先完成人工复核，再决定是否使用 `--approve`：
+
+```powershell
+.\.venv\Scripts\python.exe import_drug_instructions.py .\official-instructions.txt --source-url "官方页面链接" --source-type nmpa
+```
+
+已审核说明书可以通过 `GET /api/v1/instructions/search?q=药品名称` 查询。
+
+## 智能药箱摄像头素材
+
+设备代理使用独立的 `X-Agent-Token` 上传抓拍图和服药录像，家庭 App 使用登录 JWT 访问。相关环境变量：
+
+```env
+SMB_DEVICE_AGENT_TOKEN=replace-with-a-random-device-agent-token
+SMB_DEVICE_CAMERA_DIR=./data/camera_assets
+SMB_DEVICE_CAMERA_MAX_UPLOAD_MB=200
+```
+
+家庭账号接口：
+
+- `GET /api/v1/hardware-devices/{device_id}/camera/assets`
+- `GET /api/v1/hardware-devices/{device_id}/camera/assets/{asset_id}/file`
+- `GET /api/v1/hardware-devices/{device_id}/camera/assets/{asset_id}/thumbnail`
+- `PATCH /api/v1/hardware-devices/{device_id}/camera/assets/{asset_id}/review`
+
+设备代理接口：
+
+- `POST /api/v1/device-agent/camera-assets`
+- 命令类型新增 `camera_snapshot`，并复用 `intake_record`
+
+素材不会公开静态暴露。视频只是“疑似服药”的辅助证据，App 确认后只更新素材审核状态，不会自动写入真实服药记录。完整部署步骤见 `docs/摄像头服务部署与验证.md`。
+## 联网设备事件与播报
+
+设备注册、人脸注册任务、识别事件、近实时摄像头预览、雷达事件、小智状态、SYN6288 播报和 WebSocket 设备通道的接口与验证流程见：
+
+`docs/联网设备与播报联动.md`

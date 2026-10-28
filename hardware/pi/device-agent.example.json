@@ -1,0 +1,12 @@
+{
+  "base_url": "https://smart-medicine-box.124.156.137.131.nip.io",
+  "device_uid": "orangepi-001",
+  "agent_token": "dev-device-agent-token",
+  "camera_device": "/dev/video1",
+  "rotate": 0,
+  "poll_seconds": 2,
+  "heartbeat_seconds": 5,
+  "script_dir": "/home/orangepi",
+  "radar_ready": false,
+  "tts_ready": false
+}

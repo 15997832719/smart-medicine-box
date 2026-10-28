@@ -1,0 +1,243 @@
+#!/bin/bash
+#
+# Copyright (c) Authors: https://www.armbian.com/authors
+#
+# This file is licensed under the terms of the GNU General Public
+# License version 2. This program is licensed "as is" without any
+# warranty of any kind, whether express or implied.
+
+. /etc/armbian-release
+. /etc/os-release
+. /lib/init/vars.sh
+. /lib/lsb/init-functions
+. /usr/lib/armbian/armbian-common
+
+# Apply a new system hostname once and reconcile the 127.0.1.1/::1 records in
+# /etc/hosts written at build time (loopback names, aliases and comments are
+# left untouched). No-op only when the target is empty. The /etc/hosts
+# reconciliation runs even when new==old (skipping only the hostnamectl call
+# itself): a prior run can have set the hostname successfully but failed the
+# /etc/hosts edit, and a retry must still repair those records rather than
+# short-circuit on "already current".
+set_new_hostname() {
+	local new="$1" old esc_new
+	old="$(hostname)"
+	[[ -z "$new" ]] && return 0
+	if [[ "$new" != "$old" ]]; then
+		hostnamectl set-hostname "$new" || return 1
+	fi
+	esc_new=$(printf '%s' "$new" | sed 's#[\\/&]#\\&#g')
+	sed -i -E \
+		-e "s|^(127\.0\.1\.1[[:space:]]+)[^[:space:]#]+|\1${esc_new}|" \
+		-e "s|^(::1[[:space:]]+localhost[[:space:]]+)[^[:space:]#]+|\1${esc_new}|" \
+		/etc/hosts
+}
+
+case "$1" in
+	start)
+
+	# Run a q&d benchmark to be able to identify cards way too slow easily
+	if command -v "iozone" > /dev/null 2>&1; then
+	echo -e "\n### quick iozone test:$(cd /root; iozone -e -I -a -s 1M -r 4k -i 0 -i 1 -i 2 | grep '^            1024' | sed 's/            1024      //')" >> $Log
+	fi
+
+	# Bluetooth tweaks
+	case ${BOARD} in
+		cubietruck)
+			systemctl enable brcm40183-patch && service brcm40183-patch start
+			;;
+		bananapim2zero|bananapim2plus|nanopiair|nanopim1plus|orangepizeroplus2*|orangepiwin|nanopineoplus2|nanopik2)
+			update-rc.d ap6212-bluetooth defaults
+			;;
+	esac
+
+	# Debian Buster desktop bugfix https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=923289
+	[[ -d /etc/lightdm ]] && dpkg-reconfigure libgdk-pixbuf2.0-0 && update-mime-database /usr/share/mime
+
+	# update console info
+	setupcon --save
+
+	# add unique installation id to the image release file
+	sed '1s/^/IMAGE_UUID=/' /proc/sys/kernel/random/uuid >> /etc/armbian-image-release
+
+	# disable passing locale environment via ssh
+	sed -e '/AcceptEnv LANG/ s/^#*/#/' -i /etc/ssh/sshd_config
+
+	# Enable Armbian Live patch if installed
+	[[ -f /etc/systemd/system/armbian-live-patch.service ]] && systemctl --no-reload enable armbian-live-patch.service
+
+	# SSH Keys creation
+	if [[ "${OPENSSHD_REGENERATE_HOST_KEYS}" = true ]]; then
+		rm -f /etc/ssh/ssh_host*
+		read entropy_before </proc/sys/kernel/random/entropy_avail
+		dpkg-reconfigure openssh-server >/dev/null 2>&1
+		service ssh restart
+		read entropy_after </proc/sys/kernel/random/entropy_avail
+		echo -e "\n### [firstrun] Recreated SSH keys (entropy: ${entropy_before} ${entropy_after})" >>${Log}
+		# ssh-keygen writes without any fsync; flush now so the armbianEnv.txt
+		# update's exit-1 path below cannot leave the new keys non-durable.
+		sync
+	else
+		echo -e "\n### [firstrun] SSH host keys unchanged" >>${Log}
+	fi
+
+	# get rid of purple background color in newt apps whiptail, partimage, debconf ... Reverting to Debian look.
+	[[ -f /etc/newt/palette ]] && sed -e 's/magenta/blue/g' -i /etc/newt/palette
+
+	# randomize mac in armbianEnv.txt (atomic write to survive power loss)
+	if [[ -f /boot/armbianEnv.txt ]]; then
+		generate_random_mac; mac0="${MACADDR}"
+		generate_random_mac; mac1="${MACADDR}"
+		_f="/boot/armbianEnv.txt"
+		if sed -e "s/^ethaddr=.*/ethaddr=${mac0}/" \
+		       -e "s/^eth1addr=.*/eth1addr=${mac1}/" \
+		       "${_f}" > "${_f}.tmp"; then
+			atomic_write "${_f}.tmp" "${_f}" || exit 1
+		else
+			rm -f "${_f}.tmp"
+		fi
+	fi
+
+	# hardware workarounds per family
+	case $LINUXFAMILY in
+		sun7i|sun8i)
+			# set some mac address for BT
+			[[ -n $(lsmod | grep -E "dhd|brcmfmac" ) ]] && \
+				(MACADDR=$(printf '43:29:B1:%02X:%02X:%02X\n' $[RANDOM%256] $[RANDOM%256] $[RANDOM%256]) ; \
+				sed -i "s/^MAC_ADDR=.*/MAC_ADDR=${MACADDR}/" /etc/default/brcm40183 ;\
+				sed -i "s/^MAC_ADDR=.*/MAC_ADDR=${MACADDR}/" /etc/default/ap6212 \
+				echo -e "\n### [firstrun] Use MAC address ${MACADDR} for Bluetooth from now" >>${Log})
+
+			case $BOARD_NAME in
+				"NanoPi Air"|"NanoPi M1+"|"NanoPi Neo+ 2")
+					# change serial port for BT on FriendlyELEC H3 boards
+					sed -i "s/^PORT=.*/PORT=ttyS3/" /etc/default/ap6212
+					;;
+				"Orange Pi Zero"|"NanoPi Duo"|"Sunvell R69")
+					generate_random_mac
+					echo "options xradio_wlan macaddr=${MACADDR}" >/etc/modprobe.d/xradio_wlan.conf
+					echo -e "\n### [firstrun] Use MAC address ${MACADDR} for Wi-Fi from now" >>${Log}
+					cd /etc/network/ && ln -sf interfaces.network-manager interfaces
+					(modprobe -r xradio_wlan && sleep 1 && modprobe xradio_wlan) &
+					;;
+			esac
+
+			# trigger red or blue LED as user feedback
+			echo heartbeat >/sys/class/leds/*red*/trigger 2>/dev/null || echo heartbeat >/sys/class/leds/*blue*/trigger 2>/dev/null
+			;;
+
+		x86|arm64)
+			# NVIDIA hardware detection moved out of firstrun. The
+			# previous one-liner here greped dmesg for "No NVIDIA GPU
+			# found" and purged a hardcoded nvidia-dkms-510, both of
+			# which were unreliable: the dmesg line is only emitted
+			# if the driver bound far enough to print it (and the
+			# line falls off the ring buffer on busy boots), and the
+			# version pin is wrong for every release that doesn't
+			# happen to ship 510. The autodetect now lives in
+			# /usr/lib/armbian/armbian-nvidia-autodetect (installed
+			# by build/extensions/nvidia.sh), runs via systemd, and
+			# uses lspci + dpkg-query for proper hardware/package
+			# detection.
+		;;
+		*)
+
+	esac
+
+	# varios temporary hardware workarounds
+	[[ "${LINUXFAMILY}" == mvebu && "${BOARD}" != helios4 ]] && set_fixed_mac
+	[[ "${LINUXFAMILY}" == meson ]] && set_fixed_mac
+	[[ "${LINUXFAMILY}" == meson64 ]] && set_fixed_mac
+	[[ "${BOARD}" == nanopi-r6* ]] && set_fixed_mac
+
+	# adjust hostname for rpi's: the single arm64 image boots the whole Pi 3B+
+	# onward lineup, so pick a per-model hostname from the board model string.
+	# Ordered most-specific-first so e.g. "Model B Plus" wins over "Model B".
+	if [[ "${BOARD}" == rpi4b ]]; then
+		BOARD_NAME=$(cat /proc/device-tree/model | tr '\0' '\n' | sed -E 's/ Rev [0-9.]+$//')
+		NEW_HOSTNAME=""
+		# Model strings are the upstream RPi kernel DT values (arm64 / 64-bit
+		# lineup only). Compute Modules report their carrier-board string, so a
+		# substring of the SoM name is matched.
+		case "$BOARD_NAME" in
+			*"Compute Module 3"*) NEW_HOSTNAME="rpicm3" ;;
+			*"Compute Module 4S"*) NEW_HOSTNAME="rpicm4s" ;;
+			*"Compute Module 4"*) NEW_HOSTNAME="rpicm4" ;;
+			*"Compute Module 5 Lite"*) NEW_HOSTNAME="rpicm5lite" ;;
+			*"Compute Module 5"*) NEW_HOSTNAME="rpicm5" ;;
+			*"Zero 2 W"*) NEW_HOSTNAME="rpizero2w" ;;
+			*"Pi 3 Model A+"*|*"Pi 3 Model A Plus"*) NEW_HOSTNAME="rpi3aplus" ;;
+			*"Pi 3 Model B+"*|*"Pi 3 Model B Plus"*) NEW_HOSTNAME="rpi3bplus" ;;
+			*"Pi 3 Model B"*) NEW_HOSTNAME="rpi3b" ;;
+			*"Pi 400"*) NEW_HOSTNAME="rpi400" ;;
+			*"Pi 4 Model B"*) NEW_HOSTNAME="rpi4b" ;;
+			*"Pi 500"*) NEW_HOSTNAME="rpi500" ;;
+			*"Pi 5"*) NEW_HOSTNAME="rpi5b" ;;
+		esac
+		# Leaves the default rpi4b hostname in place when no model matched.
+		# Only touch the hostname if it's still the default baked-in "rpi4b"
+		# (a genuine first run) or already equals what we'd set anyway (a
+		# retry after a prior run's partial failure - hostnamectl succeeded
+		# but the /etc/hosts reconciliation didn't get there, or vice versa).
+		# Checking only "== rpi4b" here would strand that retry forever: once
+		# hostnamectl succeeds, hostname is no longer rpi4b, so a later retry
+		# would skip this whole block and never repair /etc/hosts. Anything
+		# else means the user set a custom hostname before first-run got
+		# here; leave it alone.
+		current_hostname="$(hostname)"
+		if [[ -n "$NEW_HOSTNAME" && ( "$current_hostname" == rpi4b || "$current_hostname" == "$NEW_HOSTNAME" ) ]]; then
+			# A failure here must not reach the service-disable below - if it
+			# did, a transient hostnamectl/sed failure would strand the board
+			# on the wrong hostname forever instead of retrying on the next boot.
+			set_new_hostname "$NEW_HOSTNAME" || exit 1
+		fi
+	fi
+
+	# adjust hostname for the FriendlyElec NanoPi 6-series unified image.
+	# A single image boots on several boards; the unified U-Boot detects the
+	# model via SARADC and exports nanopi6_model=<model> as its own token on the
+	# kernel command line, present only on these images. Parse it word-by-word so
+	# it can never match text embedded inside another kernel argument.
+	nanopi6_model=""
+	for arg in $(cat /proc/cmdline); do
+		case "$arg" in
+			nanopi6_model=*) nanopi6_model="${arg#nanopi6_model=}"; break ;;
+		esac
+	done
+	if [[ -n "$nanopi6_model" ]]; then
+		NEW_HOSTNAME=""
+		case "$nanopi6_model" in
+			r6s) NEW_HOSTNAME="nanopi-r6s" ;;
+			r6c) NEW_HOSTNAME="nanopi-r6c" ;;
+			m6) NEW_HOSTNAME="nanopi-m6" ;;
+			m6v2) NEW_HOSTNAME="nanopi-m6v2" ;;
+			t6) NEW_HOSTNAME="nanopct6" ;;
+			t6-lts) NEW_HOSTNAME="nanopct6-lts" ;;
+			t6-lts-plus) NEW_HOSTNAME="nanopct6-lts-plus" ;;
+		esac
+		# Same guard as the rpi4b case above: only touch the hostname while
+		# it's still the image-default baked in at build time (${BOARD}) or
+		# already equals what we'd set anyway (a retry after a prior run's
+		# partial failure). Anything else means the user set a custom
+		# hostname before first-run got here; leave it alone.
+		current_hostname="$(hostname)"
+		if [[ -n "$NEW_HOSTNAME" && ( "$current_hostname" == "${BOARD}" || "$current_hostname" == "$NEW_HOSTNAME" ) ]]; then
+			# A failure here must not reach the service-disable below - if it
+			# did, a transient hostnamectl/sed failure would strand the board
+			# on the wrong hostname forever instead of retrying on the next boot.
+			set_new_hostname "$NEW_HOSTNAME" || exit 1
+		fi
+	fi
+
+	# Remove KDE Neon base files upgrade pin
+	[[ -f /etc/apt/preferences.d/99-neon-base-files ]] && rm -f /etc/apt/preferences.d/99-neon-base-files
+
+	systemctl disable armbian-firstrun
+	exit 0
+	;;
+
+	*)
+	echo "Usage: $0 start"
+	exit 0
+	;;
+esac

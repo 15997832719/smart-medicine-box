@@ -36,7 +36,7 @@ export class ReminderAgentService {
     const request: reminderAgentManager.ReminderRequestTimer = {
       reminderType: reminderAgentManager.ReminderType.REMINDER_TYPE_TIMER,
       triggerTimeInSeconds: delaySeconds,
-      title: '稍后服药提醒',
+      title: medicineName,
       content: medicineName + dose + '，请确认是否已经服药。',
       notificationId: ReminderAgentService.snoozeNotificationId(scheduleId),
       groupId: ReminderAgentService.groupId,
@@ -68,7 +68,7 @@ export class ReminderAgentService {
     const request: reminderAgentManager.ReminderRequestTimer = {
       reminderType: reminderAgentManager.ReminderType.REMINDER_TYPE_TIMER,
       triggerTimeInSeconds: delaySeconds,
-      title: '用药提醒',
+      title: schedule.medicineName,
       content: ReminderAgentService.content(schedule.medicineName, schedule.dose),
       expiredContent: '本次服药提醒已过期，请核实是否服药。',
       snoozeContent: '稍后再次提醒服药。',

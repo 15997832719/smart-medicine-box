@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme.dart';
+import '../../core/design_system.dart';
 import '../../models/medicine.dart';
 import '../../services/api_service.dart';
 import '../../services/notification_service.dart';
 import 'add_schedule_screen.dart';
-
-
 
 class ScheduleListScreen extends StatefulWidget {
   const ScheduleListScreen({super.key, this.elderId, this.title});
@@ -47,13 +45,11 @@ class _ScheduleListScreenState extends State<ScheduleListScreen> {
         content: Text('确定删除“${schedule.yao_pin_ming_cheng ?? '药品'}”这条计划吗？'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消')),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除'),
-          ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('删除')),
         ],
       ),
     );
@@ -66,14 +62,12 @@ class _ScheduleListScreenState extends State<ScheduleListScreen> {
       }
       if (!mounted) return;
       _reload();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('用药计划已删除')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('用药计划已删除')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('删除失败：$e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('删除失败：$e')));
     }
   }
 
@@ -81,29 +75,32 @@ class _ScheduleListScreenState extends State<ScheduleListScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => AddScheduleScreen(
-          elderId: widget.elderId,
-          schedule: schedule,
-        ),
+        builder: (_) =>
+            AddScheduleScreen(elderId: widget.elderId, schedule: schedule),
       ),
+    ).then((_) => _reload());
+  }
+
+  void _add() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+          builder: (_) => AddScheduleScreen(elderId: widget.elderId)),
     ).then((_) => _reload());
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: ElderTheme.bgColor,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: Text(widget.title ?? '我的用药计划'),
         actions: [
           IconButton(
-            tooltip: '添加计划',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => AddScheduleScreen(elderId: widget.elderId)),
-            ).then((_) => _reload()),
-            icon: const Icon(Icons.add_alarm),
-          ),
+              tooltip: '添加计划',
+              onPressed: _add,
+              icon: const Icon(Icons.add_alarm_rounded)),
+          const SizedBox(width: 8),
         ],
       ),
       body: FutureBuilder<List<Schedule>>(
@@ -114,44 +111,180 @@ class _ScheduleListScreenState extends State<ScheduleListScreen> {
           }
           final schedules = snapshot.data ?? const <Schedule>[];
           if (schedules.isEmpty) {
-            return const Center(
-              child: Text('暂无用药计划', style: TextStyle(fontSize: 18, color: ElderTheme.textSecondary)),
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(22, 60, 22, 24),
+              children: [
+                AppGlassCard(
+                  radius: 28,
+                  padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
+                  child: Column(
+                    children: [
+                      const AppIconTile(
+                        icon: Icons.alarm_add_rounded,
+                        size: 80,
+                        iconSize: 40,
+                        background: AppColors.blueTint,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        '暂无用药计划',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        '添加计划后，系统会按时提醒你服药。',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontSize: 16, color: AppColors.muted, height: 1.5),
+                      ),
+                      const SizedBox(height: 18),
+                      AppGradientButton(
+                        label: '添加计划',
+                        icon: Icons.add_rounded,
+                        height: 54,
+                        fontSize: 19,
+                        onPressed: _add,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             );
           }
+
+          final next = schedules.first;
           return ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: schedules.length,
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 104),
+            itemCount: schedules.length + 1,
             itemBuilder: (context, index) {
-              final schedule = schedules[index];
-              return Card(
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  leading: const Icon(Icons.alarm, color: ElderTheme.primaryColor, size: 30),
-                  title: Text(
-                    schedule.yao_pin_ming_cheng ?? '药品',
-                    style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      '${_dateText(schedule)}  ${schedule.ti_xing_shi_jian}  ${schedule.dose ?? ''}',
-                      style: const TextStyle(fontSize: 16),
+              if (index == 0) {
+                return Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(18, 17, 18, 16),
+                      decoration: BoxDecoration(
+                        gradient: AppGradients.hero,
+                        borderRadius: BorderRadius.circular(27),
+                        boxShadow: AppShadows.blue,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '今天要吃的药',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${schedules.length} 项计划',
+                            style: const TextStyle(
+                              fontSize: 34,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 7),
+                          Text(
+                            '下一次 ${next.ti_xing_shi_jian} · ${next.yao_pin_ming_cheng ?? '药品'}',
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: Colors.white.withValues(alpha: 0.92),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 13),
+                  ],
+                );
+              }
+              final schedule = schedules[index - 1];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 9),
+                child: AppGlassCard(
+                  radius: 23,
+                  padding: const EdgeInsets.fromLTRB(14, 13, 6, 13),
                   onTap: () => _edit(schedule),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
+                  child: Row(
                     children: [
+                      SizedBox(
+                        width: 71,
+                        child: Column(
+                          children: [
+                            Text(
+                              schedule.ti_xing_shi_jian,
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w900,
+                                color: AppColors.ink,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              _dateText(schedule),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: AppColors.muted2,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              schedule.yao_pin_ming_cheng ?? '药品',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.ink,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              schedule.dose?.isNotEmpty == true
+                                  ? '每次 ${schedule.dose}'
+                                  : '按计划服用',
+                              style: const TextStyle(
+                                fontSize: 17,
+                                color: AppColors.muted,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       IconButton(
                         tooltip: '编辑计划',
                         onPressed: () => _edit(schedule),
-                        icon: const Icon(Icons.edit_rounded),
+                        icon: const Icon(Icons.edit_rounded,
+                            color: Color(0xFF5B91C5), size: 22),
                       ),
                       IconButton(
                         tooltip: '删除计划',
                         onPressed: () => _delete(schedule),
-                        icon: const Icon(Icons.delete_outline_rounded),
-                        color: ElderTheme.errorColor,
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          color: AppColors.red,
+                          size: 22,
+                        ),
                       ),
                     ],
                   ),
@@ -160,6 +293,17 @@ class _ScheduleListScreenState extends State<ScheduleListScreen> {
             },
           );
         },
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+        child: AppGradientButton(
+          label: '添加用药计划',
+          icon: Icons.add_rounded,
+          height: 58,
+          fontSize: 20,
+          onPressed: _add,
+        ),
       ),
     );
   }

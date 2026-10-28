@@ -1,0 +1,47 @@
+{
+  "output": "D:\\smart-medicine-box\\docs\\慧药管家——用AI语音和图像识别守护居家老人的用药安全-修订版.pptx",
+  "outputBytes": 28337,
+  "slideCount": 3,
+  "slideSize": {
+    "width": 1280,
+    "height": 720
+  },
+  "previewDir": "D:\\smart-medicine-box\\outputs\\manual-20261019d\\presentations\\huiyao-deck\\preview",
+  "previewPaths": [
+    "D:\\smart-medicine-box\\outputs\\manual-20261019d\\presentations\\huiyao-deck\\preview\\slide-01.png",
+    "D:\\smart-medicine-box\\outputs\\manual-20261019d\\presentations\\huiyao-deck\\preview\\slide-02.png",
+    "D:\\smart-medicine-box\\outputs\\manual-20261019d\\presentations\\huiyao-deck\\preview\\slide-03.png"
+  ],
+  "layoutDir": "D:\\smart-medicine-box\\outputs\\manual-20261019d\\presentations\\huiyao-deck\\layout\\final",
+  "layoutResults": [
+    {
+      "layoutPath": "D:\\smart-medicine-box\\outputs\\manual-20261019d\\presentations\\huiyao-deck\\layout\\final\\slide-01.layout.json"
+    },
+    {
+      "layoutPath": "D:\\smart-medicine-box\\outputs\\manual-20261019d\\presentations\\huiyao-deck\\layout\\final\\slide-02.layout.json"
+    },
+    {
+      "layoutPath": "D:\\smart-medicine-box\\outputs\\manual-20261019d\\presentations\\huiyao-deck\\layout\\final\\slide-03.layout.json"
+    }
+  ],
+  "slides": [
+    {
+      "index": 1,
+      "requestedSlideNumber": 1,
+      "modulePath": "D:\\smart-medicine-box\\outputs\\manual-20261019d\\presentations\\huiyao-deck\\slides\\slide-01.mjs",
+      "exportName": "slide01"
+    },
+    {
+      "index": 2,
+      "requestedSlideNumber": 2,
+      "modulePath": "D:\\smart-medicine-box\\outputs\\manual-20261019d\\presentations\\huiyao-deck\\slides\\slide-02.mjs",
+      "exportName": "slide02"
+    },
+    {
+      "index": 3,
+      "requestedSlideNumber": 3,
+      "modulePath": "D:\\smart-medicine-box\\outputs\\manual-20261019d\\presentations\\huiyao-deck\\slides\\slide-03.mjs",
+      "exportName": "slide03"
+    }
+  ]
+}

@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 
 import '../../core/alert_text.dart';
+import '../../core/design_system.dart';
 import '../../core/theme.dart';
 import '../../models/medicine.dart';
 import '../../services/api_service.dart';
 
 class AlertCenterScreen extends StatefulWidget {
   final String title;
+  final int? ownerId;
 
-  const AlertCenterScreen({super.key, this.title = '提醒中心'});
+  const AlertCenterScreen({super.key, this.title = '提醒中心', this.ownerId});
 
   @override
   State<AlertCenterScreen> createState() => _AlertCenterScreenState();
@@ -30,28 +32,30 @@ class _AlertCenterScreenState extends State<AlertCenterScreen> {
   Widget build(BuildContext context) {
     final today = _today;
     return Scaffold(
-      backgroundColor: ElderTheme.bgColor,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(title: Text(widget.title)),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 28),
           children: [
             _summaryCard(today),
-            const SizedBox(height: 14),
+            const SizedBox(height: 8),
             _sectionTitle('风险提醒'),
-            const SizedBox(height: 10),
+            const SizedBox(height: 4),
             if (_jia_zai_zhong)
-              const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
+              const Center(
+                child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()),
+              )
             else if (_jing_gao_lie_biao.isEmpty)
               _emptyCard('当前没有高风险提醒。')
             else ...[
               ..._jing_gao_lie_biao.map(_alertTile),
               if (_jing_gao_lie_biao.any((alert) => alert.type == 'low_stock')) _thresholdHelp(),
             ],
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
             _sectionTitle('今日服药记录'),
-            const SizedBox(height: 10),
+            const SizedBox(height: 4),
             if (today == null || today.logs.isEmpty)
               _emptyCard('今天还没有确认服药记录。')
             else
@@ -66,22 +70,56 @@ class _AlertCenterScreenState extends State<AlertCenterScreen> {
     final total = today?.total ?? 0;
     final taken = today?.taken ?? 0;
     final pending = today?.pending ?? 0;
+    final ratio = total == 0 ? 0.0 : (taken / total).clamp(0.0, 1.0);
     return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(color: ElderTheme.primaryColor, borderRadius: BorderRadius.circular(20)),
+      padding: const EdgeInsets.fromLTRB(18, 17, 18, 16),
+      decoration: BoxDecoration(
+        gradient: AppGradients.hero,
+        borderRadius: BorderRadius.circular(27),
+        boxShadow: AppShadows.blue,
+      ),
       child: Row(
         children: [
-          const Icon(Icons.notifications_active_rounded, color: Colors.white, size: 44),
-          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('今日守护状态', style: TextStyle(color: Colors.white, fontSize: 23, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 6),
+                const Text(
+                  '今日守护状态',
+                  style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 5),
                 Text(
-                  _jia_zai_zhong ? '正在同步提醒...' : '已确认 $taken/$total，待确认 $pending',
-                  style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 16),
+                  _jia_zai_zhong ? '正在同步提醒…' : '已确认 $taken/$total，待确认 $pending',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.92), fontSize: 15),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 68,
+            height: 68,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 68,
+                  height: 68,
+                  child: CircularProgressIndicator(
+                    value: ratio,
+                    strokeWidth: 6,
+                    strokeCap: StrokeCap.round,
+                    backgroundColor: Colors.white.withValues(alpha: 0.2),
+                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+                Text(
+                  '${(ratio * 100).round()}%',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
                 ),
               ],
             ),
@@ -95,38 +133,50 @@ class _AlertCenterScreenState extends State<AlertCenterScreen> {
     final info = describeAlert(alert, _yao_pin_lie_biao);
     final high = alert.severity == 'high';
     final color = high ? ElderTheme.errorColor : info.color;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: ElderTheme.cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.28)),
-      ),
+    return AppGlassCard(
+      margin: const EdgeInsets.only(bottom: 9),
+      radius: 21,
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 11),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(info.icon, color: color, size: 30),
-              const SizedBox(width: 12),
+              AppIconTile(
+                icon: info.icon,
+                size: 45,
+                iconSize: 23,
+                background: color.withValues(alpha: 0.13),
+                color: color,
+              ),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   info.title,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color),
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: color),
                 ),
               ),
+              if (high)
+                const AppPill(
+                  label: '高风险',
+                  background: AppColors.redTint,
+                  foreground: AppColors.red,
+                  fontSize: 11,
+                ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(info.detail, style: const TextStyle(fontSize: 16, height: 1.4)),
+          const SizedBox(height: 7),
+          Text(
+            info.detail,
+            style: const TextStyle(fontSize: 15, height: 1.45, color: AppColors.ink2),
+          ),
           if (info.canEditThreshold && info.medicine != null)
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
                 onPressed: () => _showThresholdDialog(info.medicine!),
-                icon: const Icon(Icons.tune, size: 20),
-                label: const Text('修改提醒数量', style: TextStyle(fontSize: 16)),
+                icon: const Icon(Icons.tune, size: 19),
+                label: const Text('修改提醒数量', style: TextStyle(fontSize: 15)),
               ),
             ),
         ],
@@ -134,7 +184,6 @@ class _AlertCenterScreenState extends State<AlertCenterScreen> {
     );
   }
 
-  
   Widget _thresholdHelp() {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -150,7 +199,6 @@ class _AlertCenterScreenState extends State<AlertCenterScreen> {
     );
   }
 
-  
   Future<void> _showThresholdDialog(Medicine medicine) async {
     var value = medicine.lowStockThreshold;
     final saved = await showDialog<int>(
@@ -218,14 +266,10 @@ class _AlertCenterScreenState extends State<AlertCenterScreen> {
       if (!mounted) return;
       await _load();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已保存：剩 $saved 片以下时会提醒你')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已保存：剩 $saved 片以下时会提醒你')));
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('保存失败，请稍后再试')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('保存失败，请稍后再试')));
     }
   }
 
@@ -250,25 +294,42 @@ class _AlertCenterScreenState extends State<AlertCenterScreen> {
       createdAt: medicine.createdAt,
     );
   }
+
   Widget _logTile(MedicationLog log) {
     final time = log.actualTime ?? log.plannedTime;
     final hh = time.hour.toString().padLeft(2, '0');
     final mm = time.minute.toString().padLeft(2, '0');
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: ElderTheme.cardColor, borderRadius: BorderRadius.circular(16)),
+    return AppGlassCard(
+      margin: const EdgeInsets.only(bottom: 8),
+      radius: 19,
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
       child: Row(
         children: [
-          const Icon(Icons.check_circle_rounded, color: ElderTheme.successColor, size: 30),
-          const SizedBox(width: 12),
+          const AppIconTile(
+            icon: Icons.check_circle_rounded,
+            size: 42,
+            iconSize: 22,
+            background: AppColors.mintTint,
+            color: AppColors.mintDeep,
+          ),
+          const SizedBox(width: 11),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(log.yao_pin_ming_cheng ?? '药品', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                Text(
+                  log.yao_pin_ming_cheng ?? '药品',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.ink,
+                  ),
+                ),
                 const SizedBox(height: 3),
-                Text('$hh:$mm  ${log.confirmMethod ?? '已确认'}', style: const TextStyle(color: ElderTheme.textSecondary)),
+                Text(
+                  '$hh:$mm  ${log.confirmMethod ?? '已确认'}',
+                  style: const TextStyle(fontSize: 14, color: AppColors.muted),
+                ),
               ],
             ),
           ),
@@ -278,24 +339,24 @@ class _AlertCenterScreenState extends State<AlertCenterScreen> {
   }
 
   Widget _emptyCard(String text) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(color: ElderTheme.cardColor, borderRadius: BorderRadius.circular(16)),
-      child: Text(text, style: const TextStyle(fontSize: 16, color: ElderTheme.textSecondary)),
+    return AppGlassCard(
+      radius: 20,
+      padding: const EdgeInsets.all(16),
+      child: Text(text, style: const TextStyle(fontSize: 15, color: AppColors.muted)),
     );
   }
 
   Widget _sectionTitle(String text) {
-    return Text(text, style: const TextStyle(fontSize: 21, fontWeight: FontWeight.bold));
+    return AppSectionTitle(title: text);
   }
 
   Future<void> _load() async {
     setState(() => _jia_zai_zhong = true);
     try {
       final result = await Future.wait([
-        ApiService.getAlerts(),
-        ApiService.getTodayLogs(),
-        ApiService.getMedicines(),
+        ApiService.getAlerts(elderId: widget.ownerId),
+        ApiService.getTodayLogs(elderId: widget.ownerId),
+        ApiService.getMedicines(elderId: widget.ownerId),
       ]);
       if (!mounted) return;
       setState(() {

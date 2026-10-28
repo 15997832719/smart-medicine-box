@@ -1,0 +1,30 @@
+# Downloaded toolchains, OS images and vendor packages
+armbian/
+cygwin/
+python-packages/
+e2fstool/
+*.exe
+*.zip
+*.xz
+*.img
+*.img.xz
+
+# Generated download indexes and web captures
+*.html
+*.xml
+*_releases.json
+*_repos.json
+*_contents.json
+*_tree.json
+arduino/package_esp32_mirror_index.json
+
+# Build and runtime output
+**/__pycache__/
+esp32c3/**/build*/
+vision/output/
+
+# Local hardware credentials
+esp32c3/smart_box_node/secrets.h
+
+# Keep the radar Arduino library archive referenced by the hardware guide
+!LD2410C_Arduino.zip

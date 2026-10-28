@@ -233,7 +233,7 @@ class NotificationService {
               _notificationId(schedule.id, ji_hua_shi_jian, missed: false);
           await _schedule(
             medicationId,
-            '用药提醒',
+            schedule.yao_pin_ming_cheng ?? '用药提醒',
             '${schedule.yao_pin_ming_cheng ?? '药品'}${_doseText(schedule.dose)}，服药时间到了，请及时确认。',
             ji_hua_shi_jian,
             _medicationDetails(fullScreen: true),
@@ -254,7 +254,7 @@ class NotificationService {
               _notificationId(schedule.id, ji_hua_shi_jian, missed: true);
           await _schedule(
             missedId,
-            '漏服提醒',
+            schedule.yao_pin_ming_cheng ?? '漏服提醒',
             '${schedule.yao_pin_ming_cheng ?? '药品'}${_doseText(schedule.dose)}，已超过计划时间，请尽快核实是否服药。',
             missedAt,
             _missedDetails(),
@@ -336,7 +336,7 @@ class NotificationService {
     final at = tz.TZDateTime.now(tz.local).add(delay);
     await _schedule(
       id,
-      '稍后提醒',
+      yao_pin_ming_cheng,
       '$yao_pin_ming_cheng${_doseText(dose)}，将在30分钟后再次提醒。',
       at,
       _medicationDetails(fullScreen: true),

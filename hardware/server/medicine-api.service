@@ -1,0 +1,15 @@
+﻿[Unit]
+Description=Medicine Plan Read-only API for Xiaozhi
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/xiaozhi
+Environment=MEDICINE_OWNER_ID=1
+ExecStart=/opt/xiaozhi/.venv/bin/uvicorn medicine_api:app --host 127.0.0.1 --port 8013
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+﻿[Unit]
+Description=Xiaozhi Voice Server
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/xiaozhi
+ExecStart=/opt/xiaozhi/.venv/bin/python app.py
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

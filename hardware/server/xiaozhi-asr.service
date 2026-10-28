@@ -1,0 +1,17 @@
+﻿[Unit]
+Description=Xiaozhi Local Whisper ASR Bridge
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/xiaozhi
+Environment=ASR_MODEL=base
+Environment=ASR_MODEL_ROOT=/opt/xiaozhi/models/whisper
+ExecStart=/opt/xiaozhi/.venv/bin/uvicorn asr_bridge:app --host 127.0.0.1 --port 8012
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

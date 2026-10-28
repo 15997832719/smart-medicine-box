@@ -3,8 +3,7 @@ description: 智能药箱——用AI语音和图像识别守护居家老人的�
 
 publish_to: 'none'
 
-version: 1.0.0+1
-
+version: 1.2.6+9
 environment:
   sdk: '>=3.0.0 <4.0.0'
 
@@ -29,6 +28,7 @@ dependencies:
 
   # 音频录制与播放
   record: ^6.0.0
+  video_player: ^2.9.2
 
   # 语音播报（TTS）
   flutter_tts: ^3.8.1

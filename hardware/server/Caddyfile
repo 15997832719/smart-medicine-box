@@ -1,0 +1,15 @@
+﻿smart-medicine-box.124.156.137.131.nip.io {
+	log
+
+	handle /xiaozhi/ota/* {
+		reverse_proxy 127.0.0.1:8011
+	}
+
+	handle /xiaozhi/v1/* {
+		reverse_proxy 127.0.0.1:8010
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8000
+	}
+}

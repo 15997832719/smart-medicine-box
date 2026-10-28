@@ -55,3 +55,20 @@ Screenshot_*.png
 .DS_Store
 Thumbs.db
 *.harmonyos-backup
+
+# Local build/tool caches and generated analysis data
+.tool-cache/
+.appdata/
+.localappdata/
+outputs/
+https%3a%2f%2fmirrors.tuna.tsinghua.edu.cn%2fcygwin%2f/
+*.img
+*.img.xz
+.tmp_*
+
+# Backend deployment archives and Android signing sidecars
+dist/backend-sync-*.tar.gz
+dist/*.idsig
+
+# One-off source maintenance scripts
+tools/_*.py

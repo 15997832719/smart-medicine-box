@@ -1,5 +1,4 @@
-
-class SpeakerBindingInfo {
+﻿class SpeakerBindingInfo {
   const SpeakerBindingInfo({
     required this.id,
     required this.speakerId,
@@ -22,13 +21,11 @@ class SpeakerBindingInfo {
     );
   }
 
-  
   String get shortId {
     if (speakerId.length <= 16) return speakerId;
     return '...${speakerId.substring(speakerId.length - 6)}';
   }
 
-  
   String get displayName {
     if (platform == 'dueros') return '小度音箱（编号 $shortId）';
     return '智能音箱（编号 $shortId）';
