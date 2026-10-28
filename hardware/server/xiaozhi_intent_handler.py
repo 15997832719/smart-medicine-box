@@ -1,4 +1,4 @@
-﻿import json
+import json
 import uuid
 import asyncio
 from typing import TYPE_CHECKING
@@ -39,11 +39,14 @@ async def handle_user_intent(conn: "ConnectionHandler", text):
 
     # 身份问题固定回答，避免上一轮服药上下文污染。
     if is_identity_question(filtered_text):
-        # 先把上一轮 TTS 取消，再用全新的 sentence_id 播报本轮固定回答。
-        conn.client_abort = True
+        # 先打断上一轮，但必须在开始播放新回答前解除 abort，
+        # 否则 TTS 消费线程会持续跳过新消息，表现为一直卡住不说话。
+        conn.clear_queues()
+        conn.clearSpeakStatus()
         if getattr(conn, "audio_rate_controller", None):
             conn.audio_rate_controller.reset()
         conn.sentence_id = str(uuid.uuid4().hex)
+        conn.client_abort = False
         await send_stt_message(conn, text)
         reply = identity_reply()
         conn.dialogue.put(Message(role="user", content=text))

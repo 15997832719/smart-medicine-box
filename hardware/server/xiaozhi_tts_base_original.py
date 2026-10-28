@@ -397,7 +397,10 @@ class TTSProviderBase(ABC):
                             tts_file, callback=self.handle_opus
                         )
                 if message.sentence_type == SentenceType.LAST:
-                    self._process_remaining_text_stream(opus_handler=self.handle_opus)
+                    if not self._process_short_reply_as_one_segment(
+                        opus_handler=self.handle_opus
+                    ):
+                        self._process_remaining_text_stream(opus_handler=self.handle_opus)
                     self.tts_audio_queue.put(
                         (message.sentence_type, [], message.content_detail, message.sentence_id)
                     )
@@ -636,6 +639,23 @@ class TTSProviderBase(ABC):
                 self.processed_chars += len(full_text)
                 return True
         return False
+
+    def _process_short_reply_as_one_segment(self, opus_handler: Callable[[bytes], None] = None) -> bool:
+        """同轮回复较短时整段合成，避免多段 TTS 之间的网络停顿。"""
+        full_text = "".join(self.tts_text_buff)
+        remaining_text = full_text[self.processed_chars :]
+        normalized = (remaining_text or "").strip()
+        if not normalized or len(normalized) > 120:
+            return False
+        # 只在句末完整时合并；半句话仍交给流式分割，避免等待过久。
+        if normalized[-1] not in "。！？!?；;":
+            return False
+        segment_text = textUtils.get_string_no_punctuation_or_emoji(normalized)
+        if not segment_text:
+            return False
+        self.to_tts_stream(segment_text, opus_handler=opus_handler)
+        self.processed_chars = len(full_text)
+        return True
 
     def _apply_percentage_params(self, config):
         """根据子类定义的 TTS_PARAM_CONFIG 批量应用百分比参数"""
